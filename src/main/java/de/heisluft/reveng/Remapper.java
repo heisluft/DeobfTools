@@ -203,9 +203,11 @@ public class Remapper implements Util {
       gatherInheritedMethods(cn.superName);
       cn.interfaces.forEach(this::gatherInheritedMethods);
       cn.fields.forEach(fn -> {
-        if(cn.superName.equals(Type.getInternalName(Enum.class)) && fn.desc.equals("[" + cn.name + ";") && (fn.access & Opcodes.ACC_SYNTHETIC) == Opcodes.ACC_SYNTHETIC) {
-          System.out.println("Stripping synthetic enum values field");
-        }else fieldMappings.computeIfAbsent(cn.name, s -> new HashMap<>()).put(fn.name, fn.name);
+        if (cn.superName.equals(Type.getInternalName(Enum.class))&&fn.desc.equals("[L" + cn.name + ";") && (fn.access & Opcodes.ACC_SYNTHETIC) == Opcodes.ACC_SYNTHETIC) {
+          fieldMappings.computeIfAbsent(cn.name, s -> new HashMap<>()).put(fn.name, "values");
+        }
+        else fieldMappings.computeIfAbsent(cn.name, s -> new HashMap<>()).put(fn.name, fn.name);
+
       });
       Set<String> superMDs = INHERITABLE_METHODS.getOrDefault(cn.superName, new HashSet<>());
       Set<String> intMDSs = cn.interfaces.stream().filter(INHERITABLE_METHODS::containsKey).flatMap(s -> INHERITABLE_METHODS
@@ -333,7 +335,7 @@ public class Remapper implements Util {
     return fName;
   }
 
-  private static boolean isSynthetic(int access) {
+  static boolean isSynthetic(int access) {
     return (access & Opcodes.ACC_SYNTHETIC) == Opcodes.ACC_SYNTHETIC;
   }
 
@@ -380,6 +382,7 @@ public class Remapper implements Util {
           l.signature = remapSignature(l.signature);
         });
         if(mn.signature != null) mn.signature = remapDescriptor(mn.signature);
+        mn.tryCatchBlocks.forEach(tcbn->tcbn.type = classMappings.getOrDefault(tcbn.type, tcbn.type));
         mn.instructions.forEach(ins -> {
           if(ins instanceof FieldInsnNode) {
             FieldInsnNode fieldNode = (FieldInsnNode) ins;
