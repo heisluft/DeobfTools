@@ -12,21 +12,17 @@ import java.util.function.Supplier;
  */
 public interface FunctionalUtil {
 
-  default <T> Predicate<T> not(Predicate<T> toNegate) {
-    return t -> !toNegate.test(t);
-  }
-
-  default <T> Supplier<T> propagate(Callable<T> func) {
-    return errorCatching(func, e -> {
+  default <T> Supplier<T> propagate(Callable<T> callable) {
+    return errorCatching(callable, e -> {
       if(e instanceof RuntimeException) throw (RuntimeException) e;
       else throw new RuntimeException(e);
     });
   }
 
-  default <T> Supplier<T> errorCatching(Callable<T> func, Consumer<Exception> exceptionConsumer) {
+  default <T> Supplier<T> errorCatching(Callable<T> callable, Consumer<Exception> exceptionConsumer) {
     return () -> {
       try {
-        return func.call();
+        return callable.call();
       } catch(Exception e) {
         exceptionConsumer.accept(e);
         return null;
@@ -38,19 +34,19 @@ public interface FunctionalUtil {
     return errorCatching(callable, Throwable::printStackTrace);
   }
 
-  default <T> Consumer<T> propagate(ThrowingConsumer<T> func) {
-    return errorCatching(func, (e,s) -> {
+  default <T> Consumer<T> propagate(ThrowingConsumer<T> consumer) {
+    return errorCatching(consumer, (e,s) -> {
       if(e instanceof RuntimeException) throw (RuntimeException) e;
       else throw new RuntimeException(e);
     });
   }
 
-  default <T> Consumer<T> errorCatching(ThrowingConsumer<T> func, BiConsumer<Exception, T> exceptionConsumer) {
+  default <T> Consumer<T> errorCatching(ThrowingConsumer<T> consumer, BiConsumer<Exception, T> errorHandler) {
     return s -> {
       try {
-        func.accept(s);
+        consumer.accept(s);
       } catch(Exception e) {
-        exceptionConsumer.accept(e, s);
+        errorHandler.accept(e, s);
       }
     };
   }
@@ -59,26 +55,26 @@ public interface FunctionalUtil {
     return errorCatching(consumer, (e, s) -> e.printStackTrace());
   }
 
-  default <I, O> Function<I, O> propagate(ThrowingFunction<I, O> func) {
-    return errorCatching(func, e -> {
+  default <I, O> Function<I, O> propagate(ThrowingFunction<I, O> function) {
+    return errorCatching(function, (e,i) -> {
       if(e instanceof RuntimeException) throw (RuntimeException) e;
       else throw new RuntimeException(e);
     });
   }
 
-  default <I, O> Function<I, O> errorCatching(ThrowingFunction<I, O> func, Consumer<Exception> exceptionConsumer) {
+  default <I, O> Function<I, O> errorCatching(ThrowingFunction<I, O> function, BiConsumer<Exception, I> errorHandler) {
     return i -> {
       try {
-        return func.apply(i);
+        return function.apply(i);
       } catch(Exception e) {
-        exceptionConsumer.accept(e);
+        errorHandler.accept(e,i);
         return null;
       }
     };
   }
 
-  default <I, O> Function<I, O> catchErr(ThrowingFunction<I, O> consumer) {
-    return errorCatching(consumer, Throwable::printStackTrace);
+  default <I, O> Function<I, O> catchErr(ThrowingFunction<I, O> function) {
+    return errorCatching(function, (e,i) -> e.printStackTrace());
   }
 
 }

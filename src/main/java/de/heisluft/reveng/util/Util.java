@@ -10,7 +10,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
-public interface Util extends AsmUtil, FunctionalUtil{
+public interface Util extends AsmUtil, FunctionalUtil {
    default FileSystem createFS(Path path) throws IOException {
     Map<String, String> map = new HashMap<>(1);
     map.put("create", "true");
@@ -26,7 +26,6 @@ public interface Util extends AsmUtil, FunctionalUtil{
    * @return the joined string
    */
   default String toString(Collection<Character> chars) {
-    Iterator<Character> it = chars.iterator();
     StringBuilder builder = new StringBuilder();
     chars.forEach(builder::append);
     return builder.toString();
