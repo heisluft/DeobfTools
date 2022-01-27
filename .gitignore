@@ -5,7 +5,3 @@ build/
 #IntelliJ Stuff
 .idea/
 out/
-
-#Project-Specific
-*.jar
-*.frg
