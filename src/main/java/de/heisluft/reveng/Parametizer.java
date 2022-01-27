@@ -1,6 +1,5 @@
 package de.heisluft.reveng;
 
-import de.heisluft.reveng.util.Util;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.tree.ParameterNode;
 
@@ -16,13 +15,15 @@ import java.util.List;
 import java.util.PrimitiveIterator;
 import java.util.stream.Stream;
 
+import static de.heisluft.function.FunctionalUtil.*;
+
 public class Parametizer implements Util {
 
   private Parametizer(Path inputPath, Path mappingsPath, Path outputPath) throws IOException {
     List<String> lines = new ArrayList<>();
     Files.copy(inputPath, outputPath, StandardCopyOption.REPLACE_EXISTING);
     try(FileSystem system = createFS(outputPath)) {
-      Files.walk(system.getPath("/")).filter(p -> p.toString().endsWith(".class") && Stream.of("/paulscode", "/com/jcraft").noneMatch(s -> p.toString().startsWith(s))).map(propagate(this::parseClass)).forEach(cn -> {
+      Files.walk(system.getPath("/")).filter(p -> isClass(p) && Stream.of("/paulscode", "/com/jcraft").noneMatch(s -> p.toString().startsWith(s))).map(thr(this::parseClass)).forEach(cn -> {
         cn.methods.forEach(mn -> {
           List<String> paramNames = nameParams(mn.desc);
           List<ParameterNode> params = new ArrayList<>();

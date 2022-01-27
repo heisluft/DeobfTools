@@ -1,6 +1,5 @@
 package de.heisluft.reveng;
 
-import de.heisluft.reveng.util.Util;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.Opcodes;
@@ -24,8 +23,11 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static de.heisluft.function.FunctionalUtil.*;
+
+//TODO: Remapping of innerClass field, inferring of inner classes will happen before remapping!
+//TODO: Don't emit mappings for anonymous classes
 //TODO: Renaming of enum value field
-//TODO: Restore information about anonymous classes so they can be decompiled correctly.
 //TODO: Think about a clever way to restore generic signatures on fields and based on that, methods
 //TODO: Come up with an idea on how to restore generic signatures of obfuscated classes with the help of the specialized subclass bridge methods
 //The Ultimate Goal would be a remapper which is smart enough to generate the specialized methods from bridge methods and maybe even inferring checked exceptions.
@@ -69,7 +71,7 @@ public class Remapper implements Util {
     this.mappingsPath = mappingsPath;
     if(inputIsJar)
     try(FileSystem fs = createFS(inputPath)) {
-      Files.walk(fs.getPath("/")).filter(path -> path.toString().endsWith(".class") && ignorePaths.stream().noneMatch(s -> path.toString().startsWith(s))).map(propagate(this::parseClass)).forEach(c -> classNodes.put(c.name, c));
+      Files.walk(fs.getPath("/")).filter(path -> path.toString().endsWith(".class") && ignorePaths.stream().noneMatch(s -> path.toString().startsWith(s))).map(thr(this::parseClass)).forEach(c -> classNodes.put(c.name, c));
     }
   }
 
@@ -364,7 +366,7 @@ public class Remapper implements Util {
           });
         }
     );
-    classNodes.values().forEach(propagate(n -> {
+    classNodes.values().forEach(thrc(n -> {
       n.fields.forEach(f -> {
         f.name = remapFieldName(n, f.name, f.desc);
         f.desc = remapDescriptor(f.desc);
@@ -442,7 +444,7 @@ public class Remapper implements Util {
     }));
     Files.write(outputPath, new byte[]{80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
     try(FileSystem fs = createFS(outputPath)) {
-      classNodes.values().forEach(propagate(n -> {
+      classNodes.values().forEach(thrc(n -> {
         if(n.nestMembers != null) n.nestMembers = n.nestMembers.stream().map(nestMbr -> classMappings.getOrDefault(nestMbr, nestMbr)).collect(Collectors.toList());
         n.nestHostClass = classMappings.getOrDefault(n.nestHostClass, n.nestHostClass);
         n.name = classMappings.getOrDefault(n.name, n.name);
