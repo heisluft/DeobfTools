@@ -5,3 +5,5 @@ build/
 #IntelliJ Stuff
 .idea/
 out/
+
+*-deobf.jar
