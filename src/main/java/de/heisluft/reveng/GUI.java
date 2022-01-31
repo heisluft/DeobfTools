@@ -128,7 +128,7 @@ public class GUI implements Util {
   private static <K,V> Map<K,V> Map_of(Tuple2<K,V>... tups) {
     Map<K, V> res = new HashMap<>(tups.length);
     for (Tuple2<K, V> t : tups) res.put(t._1,t._2);
-    return Collections.unmodifiableMap(res);
+    return res;
   }
 
   private static Dimension sub(Dimension d, Dimension o) {
