@@ -34,6 +34,20 @@ import static de.heisluft.function.FunctionalUtil.*;
 public class Remapper implements Util {
   /**All Primitive Names*/
   private static final List<String> PRIMITIVES = Arrays.asList("B", "C", "D", "F", "I", "J", "S", "V", "Z");
+  /**
+   * A List of all java keywords with length 3 or below.
+   * Classes with these names will have their name changed by the map task in order to allow simple
+   * decompilation afterwards
+   */
+  private static final List<String> RESERVED_WORDS = Arrays.asList(
+      "do",
+      "for",
+      "if",
+      "int",
+      "new",
+      "try",
+      "to"
+      );
 
   private static final int FRG_MAPPING_TYPE_INDEX = 0;
   private static final int FRG_ENTITY_CLASS_NAME_INDEX = 1;
@@ -194,12 +208,33 @@ public class Remapper implements Util {
 
   private void writeMappingsPreset() throws IOException {
     List<String> lines = new ArrayList<>();
-    Set<String> packages = classNodes.values().stream().map(p -> p.name.substring(0, p.name.lastIndexOf("/"))).collect(Collectors.toSet());
+    Set<String> packages = classNodes.values().stream().filter(p -> p.name.contains("/")).map(p -> p.name.substring(0, p.name.lastIndexOf("/"))).collect(Collectors.toSet());
     classNodes.values().stream().map(n -> n.name).forEach(cn -> {
-      if(packages.contains(cn)) {
-        String[] split = splitAt(cn, cn.lastIndexOf("/"));
-        classMappings.put(cn, split[0] + "/_" + split[1]);
-      } else classMappings.put(cn, cn);
+      String modifiedName = cn;
+      // Reserved Words should be escaped automatically
+      if(RESERVED_WORDS.contains(modifiedName)) {
+        StringBuilder modBuilder = new StringBuilder(modifiedName);
+        // Another class could be named _if, in that case this class will be named __if
+        while(classNodes.containsKey(modBuilder.toString())) modBuilder.insert(0, "_");
+        modifiedName = modBuilder.toString();
+      }
+      // Reserved Words should be escaped automatically
+      else if(modifiedName.contains("/") && RESERVED_WORDS.contains(modifiedName.substring(modifiedName.lastIndexOf('/') + 1))) {
+        // Again, we need to avoid naming blah/if to blah/_if if there is already a so named class
+        while(classNodes.containsKey(modifiedName)) {
+          String[] split = splitAt(modifiedName, modifiedName.lastIndexOf("/") + 1);
+          modifiedName = split[0] + "_" + split[1];
+        }
+      }
+      // Classes and Packages must not share names, so just prepend underscores until a unique class name is guaranteed
+      if(packages.contains(modifiedName)) {
+        if(!modifiedName.contains("/")) while(packages.contains(modifiedName) || classNodes.containsKey(modifiedName)) modifiedName = "_" + modifiedName;
+        else while(packages.contains(modifiedName) || classNodes.containsKey(modifiedName)) {
+          String[] split = splitAt(modifiedName, modifiedName.lastIndexOf("/") + 1);
+          modifiedName = split[0] + "_" + split[1];
+        }
+      }
+      classMappings.put(cn, modifiedName);
     });
     classNodes.values().forEach(cn -> {
       gatherInheritedMethods(cn.superName);
