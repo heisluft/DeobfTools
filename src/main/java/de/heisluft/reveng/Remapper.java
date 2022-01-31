@@ -49,8 +49,8 @@ public class Remapper implements Util {
   private static final Set<String> OBJECT_MDS = new HashSet<>();
 
   static {
-    for(Method method : Object.class.getMethods())
-      if(hasNone(method.getModifiers(), Opcodes.ACC_STATIC, Opcodes.ACC_FINAL))
+    for(Method method : Object.class.getDeclaredMethods())
+      if(hasNone(method.getModifiers(), Opcodes.ACC_STATIC, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE))
         OBJECT_MDS.add(method.getName() + Type.getMethodDescriptor(method));
   }
 
