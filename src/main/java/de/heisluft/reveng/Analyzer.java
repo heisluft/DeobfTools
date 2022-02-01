@@ -1,7 +1,6 @@
 package de.heisluft.reveng;
 
 import de.heisluft.function.Tuple2;
-import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 
@@ -10,7 +9,6 @@ import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import static de.heisluft.function.FunctionalUtil.*;
@@ -39,7 +37,7 @@ public class Analyzer implements Util {
 
   private Analyzer() throws IOException {
     try (FileSystem system = createFS(Paths.get("NMSSaveEditor.jar"))) {
-      Files.walk(system.getPath("/")).filter(this::isClass)
+      Files.walk(system.getPath("/")).filter(this::hasClassExt)
           .filter(p -> !p.startsWith("/com/")).map(thr(this::parseClass))
           .map(Tuple2.expandFirst(cn -> cn.name)).forEach(tuple -> tuple.consume(classNodes::put));
     }
