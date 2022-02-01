@@ -6,4 +6,6 @@ build/
 .idea/
 out/
 
+#Project specific
 *-deobf.jar
+*-mapped.jar
