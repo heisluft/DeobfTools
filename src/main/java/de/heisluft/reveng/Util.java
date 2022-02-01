@@ -53,4 +53,18 @@ public interface Util {
     return builder.toString();
   }
 
+  /**
+   * Splits a String at the given index.
+   *
+   * @param s
+   *     the String to be split
+   * @param index
+   *     the index on which to split on
+   *
+   * @return the pair of split halves
+   */
+  default String[] splitAt(String s, int index) {
+    return new String[]{s.substring(0, index), s.substring(index + 1)};
+  }
+
 }

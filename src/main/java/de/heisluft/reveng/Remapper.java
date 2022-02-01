@@ -492,7 +492,7 @@ public class Remapper implements Util {
         });
         ClassWriter w = new ClassWriter(ClassWriter.COMPUTE_MAXS);
         n.accept(w);
-        Files.createDirectories(fs.getPath(n.name.substring(0, n.name.lastIndexOf('/'))));
+        if(n.name.contains("/")) Files.createDirectories(fs.getPath(n.name.substring(0, n.name.lastIndexOf('/'))));
         Files.write(fs.getPath(n.name + ".class"), w.toByteArray());
       }));
     }
@@ -604,17 +604,4 @@ public class Remapper implements Util {
   }
 
 
-  /**
-   * Splits a String at the given index.
-   *
-   * @param s
-   *     the String to be split
-   * @param index
-   *     the index on which to split on
-   *
-   * @return the pair of split halves
-   */
-  private String[] splitAt(String s, int index) {
-    return new String[]{s.substring(0, index), s.substring(index + 1)};
-  }
 }
