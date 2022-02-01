@@ -83,15 +83,36 @@ public class Remapper implements Util {
   private Remapper(Path inputPath, Path mappingsPath, boolean inputIsJar, List<String> ignorePaths) throws IOException {
     this.inputPath = inputPath;
     this.mappingsPath = mappingsPath;
-    if(inputIsJar)
-    try(FileSystem fs = createFS(inputPath)) {
+    if(inputIsJar) try(FileSystem fs = createFS(inputPath)) {
       Files.walk(fs.getPath("/")).filter(path -> path.toString().endsWith(".class") && ignorePaths.stream().noneMatch(s -> path.toString().startsWith(s))).map(thr(this::parseClass)).forEach(c -> classNodes.put(c.name, c));
     }
   }
 
-  private static boolean hasNone(int code, int... flags) {
+  /**
+   * Returns if a given access modifier has all given flags.
+   * For each flag {@code (access & flag) == flag} must hold true
+   *
+   * @param access The value to check
+   * @param flags all flags that must be present
+   * @return if all flags are present
+   */
+  private static boolean hasAll(int access, int... flags) {
     for(int flag : flags)
-      if((code & flag) == flag) return false;
+      if((access & flag) != flag) return false;
+    return true;
+  }
+
+  /**
+   * Returns if a given access modifier has none of the given flags.
+   * For each flag {@code (access & flag) != flag} must hold true
+   *
+   * @param access The value to check
+   * @param flags all flags that must not be present
+   * @return if none of the given flags are present
+   */
+  private static boolean hasNone(int access, int... flags) {
+    for(int flag : flags)
+      if((access & flag) == flag) return false;
     return true;
   }
 
@@ -222,16 +243,16 @@ public class Remapper implements Util {
       else if(modifiedName.contains("/") && RESERVED_WORDS.contains(modifiedName.substring(modifiedName.lastIndexOf('/') + 1))) {
         // Again, we need to avoid naming blah/if to blah/_if if there is already a so named class
         while(classNodes.containsKey(modifiedName)) {
-          String[] split = splitAt(modifiedName, modifiedName.lastIndexOf("/") + 1);
-          modifiedName = split[0] + "_" + split[1];
+          String[] split = splitAt(modifiedName, modifiedName.lastIndexOf("/"));
+          modifiedName = split[0] + "/_" + split[1];
         }
       }
       // Classes and Packages must not share names, so just prepend underscores until a unique class name is guaranteed
       if(packages.contains(modifiedName)) {
         if(!modifiedName.contains("/")) while(packages.contains(modifiedName) || classNodes.containsKey(modifiedName)) modifiedName = "_" + modifiedName;
         else while(packages.contains(modifiedName) || classNodes.containsKey(modifiedName)) {
-          String[] split = splitAt(modifiedName, modifiedName.lastIndexOf("/") + 1);
-          modifiedName = split[0] + "_" + split[1];
+          String[] split = splitAt(modifiedName, modifiedName.lastIndexOf("/"));
+          modifiedName = split[0] + "/_" + split[1];
         }
       }
       classMappings.put(cn, modifiedName);
@@ -240,8 +261,8 @@ public class Remapper implements Util {
       gatherInheritedMethods(cn.superName);
       cn.interfaces.forEach(this::gatherInheritedMethods);
       cn.fields.forEach(fn -> {
-        if (cn.superName.equals(Type.getInternalName(Enum.class))&&fn.desc.equals("[L" + cn.name + ";") && (fn.access & Opcodes.ACC_SYNTHETIC) == Opcodes.ACC_SYNTHETIC) {
-          fieldMappings.computeIfAbsent(cn.name, s -> new HashMap<>()).put(fn.name, "values");
+        if (cn.superName.equals(Type.getInternalName(Enum.class))&&fn.desc.equals("[L" + cn.name + ";") && hasAll(fn.access, Opcodes.ACC_STATIC, Opcodes.ACC_SYNTHETIC, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE)) {
+          fieldMappings.computeIfAbsent(cn.name, s -> new HashMap<>()).put(fn.name, "$VALUES");
         }
         else fieldMappings.computeIfAbsent(cn.name, s -> new HashMap<>()).put(fn.name, fn.name);
 
@@ -292,12 +313,6 @@ public class Remapper implements Util {
         System.out.print("Not operating on line '" + join(line) + "'!");
       }
     });
-  }
-
-  private String join(String[] args) {
-    StringBuilder builder = new StringBuilder(args[0]);
-    for(int i = 1; i < args.length; i++) builder.append(" ").append(args[i]);
-    return builder.toString();
   }
 
   private void buildReverseMappings() throws IOException {
