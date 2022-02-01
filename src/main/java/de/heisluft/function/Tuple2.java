@@ -34,6 +34,11 @@ public class Tuple2<T1, T2> {
     _2 = __2;
   }
 
+  public static <T> Tuple2<T, T> from(T[] array) {
+    if(array.length != 2) throw new IllegalArgumentException();
+    return new Tuple2<>(array[0], array[1]);
+  }
+
   public Tuple2(Map.Entry<T1, T2> mapEntry) {
     _1 = mapEntry.getKey();
     _2 = mapEntry.getValue();
