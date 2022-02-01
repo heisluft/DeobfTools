@@ -94,16 +94,6 @@ public class Analyzer implements Util {
     return v;
   }
 
-  private String prefixes(int access) {
-    StringBuilder builder = new StringBuilder();
-    if((access & Opcodes.ACC_PRIVATE) != 0) builder.append("private ");
-    if((access & Opcodes.ACC_PUBLIC) != 0) builder.append("public ");
-    if((access & Opcodes.ACC_STATIC) != 0) builder.append("static ");
-    if((access & Opcodes.ACC_FINAL) != 0) builder.append("final ");
-    if((access & Opcodes.ACC_SYNTHETIC) != 0) builder.append("/*synthetic*/ ");
-    return builder.toString();
-  }
-
   public static void main(String[] args) throws IOException {
     System.out.println("Class Heuristics for Outer-Inner Relationships - Project CHOIR\n");
     new Analyzer();
