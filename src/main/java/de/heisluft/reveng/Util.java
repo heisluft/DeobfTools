@@ -14,8 +14,23 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * This Interface provides convenience methods to its implementors
+ */
 public interface Util {
-   default FileSystem createFS(Path path) throws IOException {
+  /**
+   * Creates a zip file system for a given path and returns it. If the requested path does not exist
+   * it will be created.
+   *
+   * @param path
+   *     the path to create a file system for
+   *
+   * @return the created file system
+   *
+   * @throws IOException
+   *     if the FileSystem could not be created
+   */
+  default FileSystem createFS(Path path) throws IOException {
     Map<String, String> map = new HashMap<>(1);
     map.put("create", "true");
     URI uri = URI.create("jar:file:/" + path.toAbsolutePath().toString().replace('\\', '/'));
@@ -24,9 +39,14 @@ public interface Util {
 
   /**
    * Parses the given file to a ClassNode
-   * @param path the path to parse
+   *
+   * @param path
+   *     the path to parse
+   *
    * @return the parsed node
-   * @throws IOException if the path could not be read
+   *
+   * @throws IOException
+   *     if the path could not be read
    */
   default ClassNode parseClass(Path path) throws IOException {
     ClassReader cr = new ClassReader(Files.readAllBytes(path));
@@ -35,8 +55,16 @@ public interface Util {
     return result;
   }
 
-  default boolean isClass(Path p) {
-     return p.toString().endsWith(".class");
+  /**
+   * Returns whether a given Class has an the .class file extension
+   *
+   * @param path
+   *     the path to test
+   *
+   * @return whether a given path has a class file extension
+   */
+  default boolean hasClassExt(Path path) {
+    return path.toString().endsWith(".class");
   }
 
   /**
@@ -56,15 +84,29 @@ public interface Util {
   /**
    * Splits a String at the given index.
    *
-   * @param s
+   * @param toSplit
    *     the String to be split
    * @param index
    *     the index on which to split on
    *
    * @return the pair of split halves
    */
-  default String[] splitAt(String s, int index) {
-    return new String[]{s.substring(0, index), s.substring(index + 1)};
+  default String[] splitAt(String toSplit, int index) {
+    return new String[]{toSplit.substring(0, index), toSplit.substring(index + 1)};
+  }
+
+  /**
+   * Joins an array of strings together with spaces
+   *
+   * @param toJoin
+   *     the String array to join
+   *
+   * @return the joined string
+   */
+  default String join(String[] toJoin) {
+    StringBuilder builder = new StringBuilder(toJoin[0]);
+    for(int i = 1; i < toJoin.length; i++) builder.append(" ").append(toJoin[i]);
+    return builder.toString();
   }
 
 }
