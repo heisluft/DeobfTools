@@ -6,7 +6,7 @@ import java.nio.file.Path;
 /**
  * A MappingsProvider is a class capable of parsing mapping files.
  * Each implementing class is only capable of parsing a single file format.
- * A mapping interface is acquired by a call to
+ * A MappingsProvider instance is acquired by a call to
  * {@link MappingsInterface#findProvider(String) findProvider}
  * within {@link MappingsInterface}
  */
