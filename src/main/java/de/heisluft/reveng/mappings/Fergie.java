@@ -6,7 +6,6 @@ import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
-import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.reflect.Method;
@@ -15,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -52,7 +52,7 @@ import static de.heisluft.function.FunctionalUtil.thr;
  *
  */
 public class Fergie implements Util, MappingProvider {
-  public static final Fergie INSTANCE = new Fergie();
+  static final Fergie INSTANCE = new Fergie();
 
   private static final int FRG_MAPPING_TYPE_INDEX = 0;
   private static final int FRG_ENTITY_CLASS_NAME_INDEX = 1;
@@ -62,16 +62,14 @@ public class Fergie implements Util, MappingProvider {
   private static final int FRG_METHOD_DESCRIPTOR_INDEX = 3;
   private static final int FRG_MAPPED_METHOD_NAME_INDEX = 4;
 
-  //className -> methodName + methodDesc
-  private final Map<String, Set<String>> INHERITABLE_METHODS = new HashMap<>();
-  //className -> fieldName + ":" + fieldDesc
-  private final Map<String, Set<String>> SUBCLASS_ACCESSIBLE_FIELDS = new HashMap<>();
-  private final Map<String, ClassNode> classNodes = new HashMap<>();
-
   /**
    * A set containing all methodNames + descriptors of java/lang/Object
    */
   private static final Set<String> OBJECT_MDS = new HashSet<>();
+
+  //className -> methodName + methodDesc
+  private final Map<String, Set<String>> inheritableMethods = new HashMap<>();
+  private final Map<String, ClassNode> classNodes = new HashMap<>();
 
   /**
    * A List of all java keywords with length 3 or below.
@@ -79,13 +77,7 @@ public class Fergie implements Util, MappingProvider {
    * decompilation afterwards
    */
   private static final List<String> RESERVED_WORDS = Arrays.asList(
-      "do",
-      "for",
-      "if",
-      "int",
-      "new",
-      "try",
-      "to"
+      "do", "for", "if", "int", "new", "try", "to"
   );
 
   static {
@@ -126,7 +118,7 @@ public class Fergie implements Util, MappingProvider {
     if(sup != null && !sup.getName().equals(Object.class.getName())) {
       for(Method m : sup.getDeclaredMethods())
         if(hasNone(m.getModifiers(), Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE, Opcodes.ACC_STATIC))
-          INHERITABLE_METHODS.get(addTo).add(m.getName() + Type.getMethodDescriptor(m));
+          inheritableMethods.get(addTo).add(m.getName() + Type.getMethodDescriptor(m));
       for(Class<?> iface : sup.getInterfaces()) buildClassHierarchy(iface, addTo);
       buildClassHierarchy(sup.getSuperclass(), addTo);
     }
@@ -144,41 +136,35 @@ public class Fergie implements Util, MappingProvider {
     ClassNode node = classNodes.get(nodeName);
     for(MethodNode m : node.methods)
       if(hasNone(m.access, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE, Opcodes.ACC_STATIC))
-        INHERITABLE_METHODS.get(addTo).add(m.name + m.desc);
+        inheritableMethods.get(addTo).add(m.name + m.desc);
     for(String iface : node.interfaces) buildClassHierarchy(iface, addTo);
     buildClassHierarchy(node.superName, addTo);
   }
 
   private void gatherInheritedMethods(String cn) {
-    if(INHERITABLE_METHODS.containsKey(cn)) return;
-    INHERITABLE_METHODS.put(cn, new HashSet<>());
+    if(inheritableMethods.containsKey(cn)) return;
+    inheritableMethods.put(cn, new HashSet<>());
     buildClassHierarchy(cn, cn);
   }
 
-  public Mappings parseMappings(Path mappingsPath) throws IOException {
+  public Mappings parseMappings(Path input) throws IOException {
     Mappings mappings = new Mappings();
-    Files.readAllLines(mappingsPath).stream().map(line -> line.split(" ")).forEach(line -> {
+    Files.readAllLines(input).stream().map(line -> line.split(" ")).forEach(line -> {
       if("MD:".equals(line[FRG_MAPPING_TYPE_INDEX])) {
-        if(line.length < 5) throw new IllegalArgumentException(
-            "Not enough arguments supplied. (" + join(line) + "), expected at least 4 got" +
-                (line.length - 1));
+        if(line.length < 5) throw new IllegalArgumentException("Not enough arguments supplied. (" + join(line) + "), expected at least 4 got" + (line.length - 1));
         String clsName = line[FRG_ENTITY_CLASS_NAME_INDEX];
         String obfName = line[FRG_ENTITY_NAME_INDEX];
         String obfDesc = line[FRG_METHOD_DESCRIPTOR_INDEX];
-        mappings.methodMappings.computeIfAbsent(clsName, s -> new HashMap<>()).put(obfName + obfDesc, line[FRG_MAPPED_METHOD_NAME_INDEX]);
+        mappings.methods.computeIfAbsent(clsName, s -> new HashMap<>()).put(obfName + obfDesc, line[FRG_MAPPED_METHOD_NAME_INDEX]);
         for(int i = 5; i < line.length; i++)
           mappings.exceptions.computeIfAbsent(clsName + obfName + obfDesc, s -> new ArrayList<>()).add(line[i]);
       } else if("FD:".equals(line[FRG_MAPPING_TYPE_INDEX])) {
-        if(line.length != 4) throw new IllegalArgumentException(
-            "Illegal amount of Arguments supplied. (" + join(line) + "), expected 3 got" +
-                (line.length - 1));
-        mappings.fieldMappings.computeIfAbsent(line[FRG_ENTITY_CLASS_NAME_INDEX], s -> new HashMap<>())
+        if(line.length != 4) throw new IllegalArgumentException("Illegal amount of Arguments supplied. (" + join(line) + "), expected 3 got" + (line.length - 1));
+        mappings.fields.computeIfAbsent(line[FRG_ENTITY_CLASS_NAME_INDEX], s -> new HashMap<>())
             .put(line[FRG_ENTITY_NAME_INDEX], line[FRG_MAPPED_FIELD_NAME_INDEX]);
       } else if("CL:".equals(line[FRG_MAPPING_TYPE_INDEX])) {
-        if(line.length != 3) throw new IllegalArgumentException(
-            "Illegal amount of Arguments supplied. (" + join(line) + "), expected 2 got" +
-                (line.length - 1));
-        mappings.classMappings.put(line[FRG_ENTITY_CLASS_NAME_INDEX], line[FRG_MAPPED_CLASS_NAME_INDEX]);
+        if(line.length != 3) throw new IllegalArgumentException("Illegal amount of Arguments supplied. (" + join(line) + "), expected 2 got" + (line.length - 1));
+        mappings.classes.put(line[FRG_ENTITY_CLASS_NAME_INDEX], line[FRG_MAPPED_CLASS_NAME_INDEX]);
       } else {
         System.out.print("Not operating on line '" + join(line) + "'!");
       }
@@ -201,9 +187,9 @@ public class Fergie implements Util, MappingProvider {
 
   void writeMappings(Mappings mappings, Path to) throws IOException {
     List<String> lines = new ArrayList<>();
-    mappings.classMappings.forEach((k,v) -> lines.add("CL: " + k + " " + v));
-    mappings.fieldMappings.forEach((clsName, map) -> map.forEach((obfFd, deobfFd) -> lines.add("FD: " + clsName + " " + obfFd + " " + deobfFd)));
-    mappings.methodMappings.forEach((clsName, map) -> map.forEach((obfMet, deobfName) -> lines.add("MD: " + clsName + " " + obfMet.substring(0, obfMet.lastIndexOf('(')) + " " + obfMet.substring(obfMet.lastIndexOf('(')) + " " + deobfName)));
+    mappings.classes.forEach((k,v) -> lines.add("CL: " + k + " " + v));
+    mappings.fields.forEach((clsName, map) -> map.forEach((obfFd, deobfFd) -> lines.add("FD: " + clsName + " " + obfFd + " " + deobfFd)));
+    mappings.methods.forEach((clsName, map) -> map.forEach((obfMet, deobfName) -> lines.add("MD: " + clsName + " " + obfMet.substring(0, obfMet.lastIndexOf('(')) + " " + obfMet.substring(obfMet.lastIndexOf('(')) + " " + deobfName)));
     lines.sort(Comparator.naturalOrder());
     Files.write(to, lines);
   }
@@ -242,28 +228,47 @@ public class Fergie implements Util, MappingProvider {
               modifiedName = split[0] + "/_" + split[1];
             }
           }
-          mappings.classMappings.put(cn, modifiedName);
+          mappings.classes.put(cn, modifiedName);
         });
+    AtomicInteger fieldCounter = new AtomicInteger(1);
+    AtomicInteger methodCounter = new AtomicInteger(1);
     classNodes.values().forEach(cn -> {
         gatherInheritedMethods(cn.superName);
         cn.interfaces.forEach(this::gatherInheritedMethods);
         cn.fields.forEach(fn -> {
           if (cn.superName.equals(Type.getInternalName(Enum.class))&&fn.desc.equals("[L" + cn.name + ";") && hasAll(fn.access, Opcodes.ACC_STATIC, Opcodes.ACC_SYNTHETIC, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE)) {
-            mappings.fieldMappings.computeIfAbsent(cn.name, s -> new HashMap<>()).put(fn.name, "$VALUES");
+            mappings.fields.computeIfAbsent(cn.name, s -> new HashMap<>()).put(fn.name, "$VALUES");
           }
-          else mappings.fieldMappings.computeIfAbsent(cn.name, s -> new HashMap<>()).put(fn.name, fn.name);
-
+          else mappings.fields.computeIfAbsent(cn.name, s -> new HashMap<>()).put(fn.name, "fd_" + fieldCounter.getAndIncrement() + "_" + fn.name);
         });
-        Set<String> superMDs = INHERITABLE_METHODS.getOrDefault(cn.superName, new HashSet<>());
-        Set<String> intMDSs = cn.interfaces.stream().filter(INHERITABLE_METHODS::containsKey).flatMap(s -> INHERITABLE_METHODS
-            .get(s).stream()).collect(Collectors.toSet());
+        Set<String> superMDs = inheritableMethods.getOrDefault(cn.superName, new HashSet<>());
+        Set<String> ifaceMDs = cn.interfaces.stream().filter(inheritableMethods::containsKey).map(inheritableMethods::get).flatMap(Collection::stream).collect(Collectors.toSet());
         cn.methods.forEach(mn -> {
           if((mn.access & Opcodes.ACC_STATIC) == Opcodes.ACC_STATIC) {
-            if(!"<clinit>".equals(mn.name) && !(cn.superName.equals(Type.getInternalName(Enum.class)) && genEnumMetDescs(cn.name).anyMatch(s -> s.equals(mn.name + mn.desc)))) mappings.methodMappings.computeIfAbsent(cn.name, s -> new HashMap<>()).put(mn.name + mn.desc, mn.name);
-          } else if(!superMDs.contains(mn.name + mn.desc) && !intMDSs.contains(mn.name + mn.desc) && !OBJECT_MDS.contains(mn.name + mn.desc)) mappings.methodMappings.computeIfAbsent(cn.name, s -> new HashMap<>()).put(mn.name + mn.desc, mn.name);
+            if(!"<clinit>".equals(mn.name) && !(cn.superName.equals(Type.getInternalName(Enum.class)) && genEnumMetDescs(cn.name).anyMatch(s -> s.equals(mn.name + mn.desc))))
+              mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(mn.name + mn.desc, "md_" + methodCounter.getAndIncrement() + "_" + mn.name);
+          } else if(noneContains(mn.name + mn.desc, superMDs, ifaceMDs, OBJECT_MDS))
+            mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(mn.name + mn.desc, mn.name.equals("<init>") ? mn.name : ("md_" + methodCounter.getAndIncrement() + "_" + mn.name));
       });
     });
     return mappings;
+  }
+
+  /**
+   * Returns true if none of a given set of sets contains a certain value t.
+   * This is both shorter to write than checking each set individually
+   * and faster than combining all sets and calling contains on that combined set
+   *
+   * @param t the value to look for
+   * @param sets the sets to check
+   * @param <T> the Type of the value and the sets to check
+   *
+   * @return true if none of the sets contain t, false otherwise
+   */
+  @SafeVarargs
+  private final <T> boolean noneContains(T t, Set<T>... sets) {
+    for(Set<T> set : sets) if(set.contains(t)) return false;
+    return true;
   }
 
   private void emitIntermediateMappings(Path obfMappings, Path to) throws IOException {
