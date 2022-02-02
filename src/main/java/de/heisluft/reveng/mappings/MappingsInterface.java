@@ -9,7 +9,7 @@ import java.nio.file.Path;
  */
 public class MappingsInterface {
   /**
-   * Finds a {@link MappingProvider} for a given file. Currently available MappingsProviders are:
+   * Finds a {@link MappingsProvider} for a given file. Currently available MappingsProviders are:
    * <ol>
    *   <li>Fergie, handling .frg files</li>
    *   <li>RGSMappingsProvider, handling .rgs files</li>
@@ -21,7 +21,7 @@ public class MappingsInterface {
    * @return an instance of a MappingsProvider or {@code null} if no such handler exists for the
    *     given file extension
    */
-  public static MappingProvider findProvider(String filename) {
+  public static MappingsProvider findProvider(String filename) {
     switch(filename.substring(filename.lastIndexOf('.') + 1)) {
       case "frg":
         return Fergie.INSTANCE;

@@ -11,7 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
-public class RGSMappingsProvider implements MappingProvider, Util {
+public class RGSMappingsProvider implements MappingsProvider, Util {
 
   public static final RGSMappingsProvider INSTANCE = new RGSMappingsProvider();
 

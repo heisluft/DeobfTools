@@ -4,13 +4,13 @@ import java.io.IOException;
 import java.nio.file.Path;
 
 /**
- * A MappingProvider is a class capable of parsing mapping files.
+ * A MappingsProvider is a class capable of parsing mapping files.
  * Each implementing class is only capable of parsing a single file format.
  * A mapping interface is acquired by a call to
  * {@link MappingsInterface#findProvider(String) findProvider}
  * within {@link MappingsInterface}
  */
-public interface MappingProvider {
+public interface MappingsProvider {
   /**
    * Parses the MappingsFile at {@code input} and returns the resulting Mappings.
    *

@@ -51,7 +51,7 @@ import static de.heisluft.function.FunctionalUtil.thr;
  * without having to lex and parse the processed files.
  *
  */
-public class Fergie implements Util, MappingProvider {
+public class Fergie implements Util, MappingsProvider {
   static final Fergie INSTANCE = new Fergie();
 
   private static final int FRG_MAPPING_TYPE_INDEX = 0;
