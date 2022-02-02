@@ -1,5 +1,6 @@
 package de.heisluft.reveng;
 
+import de.heisluft.reveng.mappings.MappingsInterface;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.Opcodes;
@@ -9,19 +10,16 @@ import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
-import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.MultiANewArrayInsnNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static de.heisluft.function.FunctionalUtil.*;
 
@@ -34,20 +32,6 @@ import static de.heisluft.function.FunctionalUtil.*;
 public class Remapper implements Util {
   /**All Primitive Names*/
   private static final List<String> PRIMITIVES = Arrays.asList("B", "C", "D", "F", "I", "J", "S", "V", "Z");
-  /**
-   * A List of all java keywords with length 3 or below.
-   * Classes with these names will have their name changed by the map task in order to allow simple
-   * decompilation afterwards
-   */
-  private static final List<String> RESERVED_WORDS = Arrays.asList(
-      "do",
-      "for",
-      "if",
-      "int",
-      "new",
-      "try",
-      "to"
-      );
 
   private static final int FRG_MAPPING_TYPE_INDEX = 0;
   private static final int FRG_ENTITY_CLASS_NAME_INDEX = 1;
@@ -60,13 +44,6 @@ public class Remapper implements Util {
   private static final Map<String, Set<String>> INHERITABLE_METHODS = new HashMap<>();
   //className -> fieldName + ":" + fieldDesc
   private static final Map<String, Set<String>> SUBCLASS_ACCESSIBLE_FIELDS = new HashMap<>();
-  private static final Set<String> OBJECT_MDS = new HashSet<>();
-
-  static {
-    for(Method method : Object.class.getDeclaredMethods())
-      if(hasNone(method.getModifiers(), Opcodes.ACC_STATIC, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE))
-        OBJECT_MDS.add(method.getName() + Type.getMethodDescriptor(method));
-  }
 
   private static final List<String> EMPTY = Collections.emptyList();
 
@@ -80,26 +57,12 @@ public class Remapper implements Util {
   private final Map<String, ClassNode> classNodes = new HashMap<>();
   private final Path mappingsPath, inputPath;
 
-  private Remapper(Path inputPath, Path mappingsPath, boolean inputIsJar, List<String> ignorePaths) throws IOException {
+  private Remapper(Path inputPath, Path mappingsPath, boolean buildClassTree, List<String> ignorePaths) throws IOException {
     this.inputPath = inputPath;
     this.mappingsPath = mappingsPath;
-    if(inputIsJar) try(FileSystem fs = createFS(inputPath)) {
+    if(buildClassTree) try(FileSystem fs = createFS(inputPath)) {
       Files.walk(fs.getPath("/")).filter(path -> path.toString().endsWith(".class") && ignorePaths.stream().noneMatch(s -> path.toString().startsWith(s))).map(thr(this::parseClass)).forEach(c -> classNodes.put(c.name, c));
     }
-  }
-
-  /**
-   * Returns if a given access modifier has all given flags.
-   * For each flag {@code (access & flag) == flag} must hold true
-   *
-   * @param access The value to check
-   * @param flags all flags that must be present
-   * @return if all flags are present
-   */
-  private static boolean hasAll(int access, int... flags) {
-    for(int flag : flags)
-      if((access & flag) != flag) return false;
-    return true;
   }
 
   /**
@@ -177,7 +140,7 @@ public class Remapper implements Util {
     }
     if(!ignoredOpts.isEmpty()) System.out.println("ignored options: " + ignoredOpts);
     try {
-      Remapper remapper = new Remapper(Paths.get(args[1]), Paths.get(args[2]), !action.equals("genReverseMappings"), ignoredPaths);
+      Remapper remapper = new Remapper(Paths.get(args[1]), Paths.get(args[2]), action.equals("remap"), ignoredPaths);
       switch(action) {
         case "remap":
           remapper.remapJar(outPath);
@@ -186,114 +149,12 @@ public class Remapper implements Util {
           remapper.buildReverseMappings();
           break;
         default:
-          remapper.writeMappingsPreset();
+          MappingsInterface.writeFergieMappings(MappingsInterface.generateMappings(Paths.get(args[1]), ignoredPaths), Paths.get(args[2]));
           break;
       }
     } catch(IOException e) {
       e.printStackTrace();
     }
-  }
-
-  private void buildClassHierarchy(Class<?> sup, String addTo) {
-    if(sup != null && !sup.getName().equals(Object.class.getName())) {
-      for(Method m : sup.getDeclaredMethods())
-        if(hasNone(m.getModifiers(), Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE, Opcodes.ACC_STATIC))
-          INHERITABLE_METHODS.get(addTo).add(m.getName() + Type.getMethodDescriptor(m));
-      for(Class<?> iface : sup.getInterfaces()) buildClassHierarchy(iface, addTo);
-      buildClassHierarchy(sup.getSuperclass(), addTo);
-    }
-  }
-
-  private void buildClassHierarchy(String nodeName, String addTo) {
-    if(!classNodes.containsKey(nodeName)) {
-      try {
-        buildClassHierarchy(Class.forName(nodeName.replace("/", ".")), addTo);
-      } catch(ClassNotFoundException e) {
-        e.printStackTrace();
-      }
-      return;
-    }
-    ClassNode node = classNodes.get(nodeName);
-    for(MethodNode m : node.methods)
-      if(hasNone(m.access, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE, Opcodes.ACC_STATIC))
-        INHERITABLE_METHODS.get(addTo).add(m.name + m.desc);
-    for(String iface : node.interfaces) buildClassHierarchy(iface, addTo);
-    buildClassHierarchy(node.superName, addTo);
-  }
-
-  private void gatherInheritedMethods(String cn) {
-    if(INHERITABLE_METHODS.containsKey(cn)) return;
-    INHERITABLE_METHODS.put(cn, new HashSet<>());
-    buildClassHierarchy(cn, cn);
-  }
-
-  private void writeMappingsPreset() throws IOException {
-    List<String> lines = new ArrayList<>();
-    Set<String> packages = classNodes.values().stream().filter(p -> p.name.contains("/")).map(p -> p.name.substring(0, p.name.lastIndexOf("/"))).collect(Collectors.toSet());
-    classNodes.values().stream().map(n -> n.name).forEach(cn -> {
-      String modifiedName = cn;
-      // Reserved Words should be escaped automatically
-      if(RESERVED_WORDS.contains(modifiedName)) {
-        StringBuilder modBuilder = new StringBuilder(modifiedName);
-        // Another class could be named _if, in that case this class will be named __if
-        while(classNodes.containsKey(modBuilder.toString())) modBuilder.insert(0, "_");
-        modifiedName = modBuilder.toString();
-      }
-      // Reserved Words should be escaped automatically
-      else if(modifiedName.contains("/") && RESERVED_WORDS.contains(modifiedName.substring(modifiedName.lastIndexOf('/') + 1))) {
-        // Again, we need to avoid naming blah/if to blah/_if if there is already a so named class
-        while(classNodes.containsKey(modifiedName)) {
-          String[] split = splitAt(modifiedName, modifiedName.lastIndexOf("/"));
-          modifiedName = split[0] + "/_" + split[1];
-        }
-      }
-      // Classes and Packages must not share names, so just prepend underscores until a unique class name is guaranteed
-      if(packages.contains(modifiedName)) {
-        if(!modifiedName.contains("/")) while(packages.contains(modifiedName) || classNodes.containsKey(modifiedName)) modifiedName = "_" + modifiedName;
-        else while(packages.contains(modifiedName) || classNodes.containsKey(modifiedName)) {
-          String[] split = splitAt(modifiedName, modifiedName.lastIndexOf("/"));
-          modifiedName = split[0] + "/_" + split[1];
-        }
-      }
-      classMappings.put(cn, modifiedName);
-    });
-    classNodes.values().forEach(cn -> {
-      gatherInheritedMethods(cn.superName);
-      cn.interfaces.forEach(this::gatherInheritedMethods);
-      cn.fields.forEach(fn -> {
-        if (cn.superName.equals(Type.getInternalName(Enum.class))&&fn.desc.equals("[L" + cn.name + ";") && hasAll(fn.access, Opcodes.ACC_STATIC, Opcodes.ACC_SYNTHETIC, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE)) {
-          fieldMappings.computeIfAbsent(cn.name, s -> new HashMap<>()).put(fn.name, "$VALUES");
-        }
-        else fieldMappings.computeIfAbsent(cn.name, s -> new HashMap<>()).put(fn.name, fn.name);
-
-      });
-      Set<String> superMDs = INHERITABLE_METHODS.getOrDefault(cn.superName, new HashSet<>());
-      Set<String> intMDSs = cn.interfaces.stream().filter(INHERITABLE_METHODS::containsKey).flatMap(s -> INHERITABLE_METHODS
-          .get(s).stream()).collect(Collectors.toSet());
-      cn.methods.forEach(mn -> {
-        if((mn.access & Opcodes.ACC_STATIC) == Opcodes.ACC_STATIC) {
-          if(!"<clinit>".equals(mn.name) && !(cn.superName.equals(Type.getInternalName(Enum.class)) && genEnumMetDescs(cn.name).anyMatch(s -> s.equals(mn.name + mn.desc)))) mdMappings.computeIfAbsent(cn.name, s -> new HashMap<>()).put(mn.name + mn.desc, mn.name);
-        } else if(!"<init>".equals(mn.name) && !superMDs.contains(mn.name + mn.desc) && !intMDSs.contains(mn.name + mn.desc) && !OBJECT_MDS.contains(mn.name + mn.desc)) mdMappings.computeIfAbsent(cn.name, s -> new HashMap<>()).put(mn.name + mn.desc, mn.name);
-      });
-    });
-    classMappings.forEach((clsName, mapped) -> lines.add("CL: " + clsName + " " + mapped));
-    fieldMappings.forEach((clsName, map) -> map.forEach((obfFd, deobfFd) -> lines.add("FD: " + clsName + " " + obfFd + " " + deobfFd)));
-    mdMappings.forEach((clsName, map) -> map.forEach((obfMet, deobfName) -> lines.add("MD: " + clsName + " " + obfMet.substring(0, obfMet.lastIndexOf('(')) + " " + obfMet.substring(obfMet.lastIndexOf('(')) + " " + deobfName)));
-    lines.sort(Comparator.naturalOrder());
-    Files.write(mappingsPath, lines);
-  }
-
-  /**
-   * Generates enum method descriptors for a given class (namely the valueOf and values methods)
-   *
-   * @param clsName
-   *     the name of the class to generate for
-   *
-   * @return a set containing <code>values()[LclsName;</code> and <code>valueOf
-   * (Ljava/lang/String;)LclsName;</code>
-   */
-  private Stream<String> genEnumMetDescs(String clsName) {
-    return Stream.of("values()[L" + clsName + ";", "valueOf(Ljava/lang/String;)L" + clsName + ";");
   }
 
   private void readMappingsFile() throws IOException {
@@ -617,6 +478,4 @@ public class Remapper implements Util {
     //convert deobfed class name to descriptor (my/deobfed/ClassName -> Lmy/deobfed/ClassName;)
     return result.append('L').append(classMappings.get(cpy)).append(';').toString();
   }
-
-
 }
