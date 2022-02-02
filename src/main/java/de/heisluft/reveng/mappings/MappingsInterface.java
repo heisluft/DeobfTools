@@ -2,6 +2,7 @@ package de.heisluft.reveng.mappings;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 
 /**
  * This Class is the main interface for generating, reading and writing Mappings without having to
@@ -38,14 +39,17 @@ public class MappingsInterface {
    *
    * @param input
    *     the jar to generate for
+   * @param ignored
+   *     a list of paths to be ignored. these paths will be loaded to gather inheritance info but
+   *     will not have mappings emitted
    *
    * @return the generated mappings
    *
    * @throws IOException
    *     if the jar file could not be read correctly
    */
-  public static Mappings generateMappings(Path input) throws IOException {
-    return new Fergie().generateMappings(input);
+  public static Mappings generateMappings(Path input, List<String> ignored) throws IOException {
+    return new Fergie().generateMappings(input, ignored);
   }
 
   /**

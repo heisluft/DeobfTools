@@ -193,8 +193,22 @@ public class Fergie implements Util, MappingsProvider {
     lines.sort(Comparator.naturalOrder());
     Files.write(to, lines);
   }
-
-  Mappings generateMappings(Path input) throws IOException {
+  /**
+   * Generates default mappings for a given jar. These mappings are guaranteed to generate unique
+   * method names.
+   *
+   * @param input
+   *     the jar to generate for
+   * @param ignored
+   *     a list of paths to be ignored. these paths will be loaded to gather inheritance info
+   *     but will not have mappings emitted
+   *
+   * @return the generated mappings
+   *
+   * @throws IOException
+   *     if the jar file could not be read correctly
+   */
+  Mappings generateMappings(Path input, List<String> ignored) throws IOException {
     Mappings mappings = new Mappings();
     if(!Files.isRegularFile(input)) throw new FileNotFoundException(input.toString());
     if(!Files.isReadable(input)) throw new IOException("Cannot read from " + input);
@@ -228,11 +242,12 @@ public class Fergie implements Util, MappingsProvider {
               modifiedName = split[0] + "/_" + split[1];
             }
           }
-          mappings.classes.put(cn, modifiedName);
+          if(ignored.stream().noneMatch(modifiedName::startsWith))
+            mappings.classes.put(cn, modifiedName);
         });
     AtomicInteger fieldCounter = new AtomicInteger(1);
     AtomicInteger methodCounter = new AtomicInteger(1);
-    classNodes.values().forEach(cn -> {
+    classNodes.values().stream().filter(c -> ignored.stream().noneMatch(c.name::startsWith)).forEach(cn -> {
         gatherInheritedMethods(cn.superName);
         cn.interfaces.forEach(this::gatherInheritedMethods);
         cn.fields.forEach(fn -> {
