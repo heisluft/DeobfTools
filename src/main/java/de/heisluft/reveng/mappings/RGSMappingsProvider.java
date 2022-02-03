@@ -40,7 +40,9 @@ public class RGSMappingsProvider implements MappingsProvider, Util {
 
   @Override
   public Mappings parseMappings(Path path) throws IOException {
-    //TODO: Implement
-    return new Mappings();
+    List<String> lines = Files.readAllLines(path);
+    Mappings mappings = new Mappings();
+    //TODO: Find a way to conveniently generate
+    return mappings;
   }
 }
