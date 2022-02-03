@@ -268,7 +268,7 @@ public class Remapper implements Util {
               mn.access ^= Opcodes.ACC_BRIDGE;
               mn.access ^= Opcodes.ACC_SYNTHETIC;
             }
-            if(hasNone(mn.access, Opcodes.ACC_STATIC, Opcodes.ACC_PRIVATE))
+            if(hasNone(mn.access, Opcodes.ACC_PRIVATE))
               INHERITABLE_METHODS.computeIfAbsent(node.name, s -> new HashSet<>()).add(mn.name + mn.desc);
           });
           node.fields.forEach(fn -> {
@@ -320,8 +320,8 @@ public class Remapper implements Util {
             if(typeNode.getOpcode() == Opcodes.NEW && anonymousClassCandidates.contains(typeNode.desc)) {
               String outerMethodName = remapMethodName(n, mn.name, mn.desc);
               String outerMethodDesc = remapDescriptor(mn.desc);
-              String outerClassName = classMappings.get(n.name);
-              System.out.println(classMappings.get(typeNode.desc) + " was likely an anonymous class in method " + outerMethodName + outerMethodDesc + " of class " + outerClassName);
+              String outerClassName = classMappings.getOrDefault(n.name, n.name);
+              System.out.println(classMappings.getOrDefault(typeNode.desc, typeNode.desc) + " was likely an anonymous class in method " + outerMethodName + outerMethodDesc + " of class " + outerClassName);
               System.out.println("Automatic Reconstruction is not yet finished");
               ClassNode anonClass = classNodes.get(typeNode.desc);
               //anonClass.outerMethodDesc = outerMethodDesc;
