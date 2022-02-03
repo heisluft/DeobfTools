@@ -16,7 +16,9 @@ import java.util.Set;
 
 import static de.heisluft.function.FunctionalUtil.*;
 
-public class AccessTransformerReader implements Util {
+//TODO: Document
+//TODO: externalize hasNone and getOrPut to Util (code is shared with remapper, fergie and analyzer)
+public class AccessTransformer implements Util {
 
   private final Map<String, String> classMap = new HashMap<>();
   private final Map<String, Map<String, String>> fieldMap = new HashMap<>();
@@ -123,7 +125,7 @@ public class AccessTransformerReader implements Util {
       System.err.println("Usage: AccessTransformer <input> <config> <output>");
       System.exit(1);
     }
-    AccessTransformerReader reader = new AccessTransformerReader();
+    AccessTransformer reader = new AccessTransformer();
     reader.readAT(Paths.get(args[1]));
     reader.transformJar(Paths.get(args[0]), Paths.get(args[2]));
   }
