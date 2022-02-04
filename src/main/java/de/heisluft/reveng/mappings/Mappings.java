@@ -1,5 +1,7 @@
 package de.heisluft.reveng.mappings;
 
+import de.heisluft.function.Tuple2;
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,7 +25,7 @@ public class Mappings {
   /**
    * All method mappings mapped as follows: className -> (methodName + methodDesc) -> remappedName
    */
-  final Map<String, Map<String, String>> methods = new HashMap<>();
+  final Map<String, Map<Tuple2<String, String>, String>> methods = new HashMap<>();
   /**
    * All exceptions added with the mappings, mapped as follows: className + methodName + methodDesc
    * -> list of exception class names exception class names may or may not be already remapped
@@ -58,7 +60,7 @@ public class Mappings {
    * @return the mapped name or {@code null} if not found
    */
   public String getMethodName(String className, String methodName, String methodDescriptor) {
-    return methods.getOrDefault(className, new HashMap<>()).get(methodName + methodDescriptor);
+    return methods.getOrDefault(className, new HashMap<>()).get(new Tuple2<>(methodName, methodDescriptor));
   }
 
   /**
@@ -100,8 +102,7 @@ public class Mappings {
    * @return true if there is a mapping for the method, false otherwise
    */
   public boolean hasMethodMapping(String className, String methodName, String methodDescriptor) {
-    return methods.getOrDefault(className, new HashMap<>())
-        .containsKey(methodName + methodDescriptor);
+    return methods.getOrDefault(className, new HashMap<>()).containsKey(new Tuple2<>(methodName, methodDescriptor));
   }
 
   /**
