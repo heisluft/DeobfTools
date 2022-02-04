@@ -33,8 +33,6 @@ import static de.heisluft.function.FunctionalUtil.thr;
 import static de.heisluft.function.FunctionalUtil.thrc;
 
 //TODO: Remapping of innerClass field, inferring of inner classes will happen before remapping!
-//TODO: Don't emit mappings for anonymous classes
-//TODO: Renaming of enum value field
 //TODO: Think about a clever way to restore generic signatures on fields and based on that, methods
 //TODO: Come up with an idea on how to restore generic signatures of obfuscated classes with the help of the specialized subclass bridge methods
 //The Ultimate Goal would be a remapper which is smart enough to generate the specialized methods from bridge methods and maybe even inferring checked exceptions.
@@ -289,6 +287,7 @@ public class Remapper implements Util {
               String outerMethodName = remapMethodName(n, mn.name, mn.desc, mappings);
               String outerMethodDesc = remapDescriptor(mn.desc, mappings);
               String outerClassName = mappings.getClassName(n.name);
+              //TODO: Remove as soon as ProjectChoir is finished
               System.out.println(mappings.getClassName(typeNode.desc) + " was likely an anonymous class in method " + outerMethodName + outerMethodDesc + " of class " + outerClassName);
               System.out.println("Automatic Reconstruction is not yet finished");
               ClassNode anonClass = classNodes.get(typeNode.desc);

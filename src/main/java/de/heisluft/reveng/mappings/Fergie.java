@@ -195,6 +195,7 @@ public class Fergie implements Util, MappingsProvider {
    * @throws IOException
    *     if the jar file could not be read correctly
    */
+  //TODO: Don't emit mappings for anonymous classes
   Mappings generateMappings(Path input, List<String> ignored) throws IOException {
     Mappings mappings = new Mappings();
     if(!Files.isRegularFile(input)) throw new FileNotFoundException(input.toString());
