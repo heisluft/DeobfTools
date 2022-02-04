@@ -2,6 +2,7 @@ package de.heisluft.reveng.mappings;
 
 import de.heisluft.function.Tuple2;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -133,6 +134,6 @@ public class Mappings {
    * @return a list of all exceptions for this method, never {@code null}
    */
   public List<String> getExceptions(String className, String methodName, String methodDescriptor) {
-    return exceptions.get(className + methodName + methodDescriptor);
+    return exceptions.getOrDefault(className + methodName + methodDescriptor, new ArrayList<>());
   }
 }
