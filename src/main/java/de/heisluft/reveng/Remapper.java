@@ -1,5 +1,6 @@
 package de.heisluft.reveng;
 
+import de.heisluft.reveng.mappings.Mappings;
 import de.heisluft.reveng.mappings.MappingsInterface;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Handle;
@@ -18,10 +19,18 @@ import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.PrimitiveIterator;
+import java.util.Set;
 import java.util.stream.Collectors;
 
-import static de.heisluft.function.FunctionalUtil.*;
+import static de.heisluft.function.FunctionalUtil.thr;
+import static de.heisluft.function.FunctionalUtil.thrc;
 
 //TODO: Remapping of innerClass field, inferring of inner classes will happen before remapping!
 //TODO: Don't emit mappings for anonymous classes
@@ -45,15 +54,7 @@ public class Remapper implements Util {
   //className -> fieldName + ":" + fieldDesc
   private static final Map<String, Set<String>> SUBCLASS_ACCESSIBLE_FIELDS = new HashMap<>();
 
-  private static final List<String> EMPTY = Collections.emptyList();
-
   private final Map<String, String> classMappings = new HashMap<>();
-  //className -> fieldName -> remappedName
-  private final Map<String, Map<String, String>> fieldMappings = new HashMap<>();
-  //className -> methodName + methodDesc -> remappedName
-  private final Map<String, Map<String, String>> mdMappings = new HashMap<>();
-  //className + methodName + methodDesc -> list of exceptions to add (can be obf.)
-  private final Map<String, List<String>> exceptions = new HashMap<>();
   private final Map<String, ClassNode> classNodes = new HashMap<>();
   private final Path inputPath;
 
@@ -143,26 +144,8 @@ public class Remapper implements Util {
     }
   }
 
-  private void readMappingsFile(Path mappingsPath) throws IOException {
-    Files.readAllLines(mappingsPath).stream().map(line -> line.split(" ")).forEach(line -> {
-      if("MD:".equals(line[FRG_MAPPING_TYPE_INDEX])) {
-        if(line.length < 5) throw new IllegalArgumentException("Line too short (" + join(line) + ")");
-        String clsName = line[FRG_ENTITY_CLASS_NAME_INDEX];
-        String obfName = line[FRG_ENTITY_NAME_INDEX];
-        String obfDesc = line[FRG_METHOD_DESCRIPTOR_INDEX];
-        mdMappings.computeIfAbsent(clsName, s -> new HashMap<>()).put(obfName + obfDesc, line[FRG_MAPPED_METHOD_NAME_INDEX]);
-        for(int i = 5; i < line.length; i++)
-          exceptions.computeIfAbsent(clsName + obfName + obfDesc, s -> new ArrayList<>()).add(line[i]);
-      } else if("FD:".equals(line[FRG_MAPPING_TYPE_INDEX]))
-        fieldMappings.computeIfAbsent(line[FRG_ENTITY_CLASS_NAME_INDEX], s -> new HashMap<>()).put(line[FRG_ENTITY_NAME_INDEX], line[FRG_MAPPED_FIELD_NAME_INDEX]);
-      else if("CL:".equals(line[FRG_MAPPING_TYPE_INDEX])) classMappings.put(line[FRG_ENTITY_CLASS_NAME_INDEX], line[FRG_MAPPED_CLASS_NAME_INDEX]);
-      else {
-        System.out.print("Not operating on line '" + join(line) + "'!");
-      }
-    });
-  }
-
   private void buildReverseMappings(Path mappingsPath) throws IOException {
+    Mappings mappings = MappingsInterface.findProvider(mappingsPath.toString()).parseMappings(mappingsPath);
     List<String> inputLines = Files.readAllLines(inputPath);
     List<String> revLines = new ArrayList<>(inputLines.size());
     inputLines.stream().map(line -> line.split(" ")).forEach(line -> {
@@ -170,7 +153,7 @@ public class Remapper implements Util {
         StringBuilder revLine = new StringBuilder( "MD: ");
         revLine.append(classMappings.get(line[FRG_ENTITY_CLASS_NAME_INDEX]));
         revLine.append(" ").append(line[FRG_MAPPED_METHOD_NAME_INDEX]);
-        revLine.append(" ").append(remapDescriptor(line[FRG_METHOD_DESCRIPTOR_INDEX]));
+        revLine.append(" ").append(remapDescriptor(line[FRG_METHOD_DESCRIPTOR_INDEX], mappings));
         revLine.append(" ").append(line[FRG_ENTITY_NAME_INDEX]);
         for(int i = 5; i < line.length; i++) revLine.append(" !").append(
             classMappings.getOrDefault(line[i], line[i]));
@@ -192,45 +175,43 @@ public class Remapper implements Util {
     Files.write(mappingsPath, revLines);
   }
 
-  private List<String> findMethodExceptions(ClassNode cls, String mdName, String mdDesc) {
+  private List<String> findMethodExceptions(ClassNode cls, String mdName, String mdDesc, Mappings mappings) {
     //Exception found
-    if(exceptions.containsKey(cls.name + mdName + mdDesc)) return exceptions.get(cls.name + mdName + mdDesc);
-    //Mapping present, but lists no exceptions
-    if(mdMappings.getOrDefault(cls.name, new HashMap<>()).containsKey(mdName + mdDesc)) return null;
+    if(mappings.hasMethodMapping(cls.name, mdName, mdDesc)) return mappings.getExceptions(cls.name, mdName, mdDesc);
     //Try inheritance
-    return findMethodExceptionsRec(cls, mdName, mdDesc);
+    return findMethodExceptionsRec(cls, mdName, mdDesc, mappings);
   }
 
-  private List<String> findMethodExceptionsRec(ClassNode cls, String mdName, String mdDesc) {
-    if(INHERITABLE_METHODS.getOrDefault(cls.name, new HashSet<>(0)).contains(mdName + mdDesc) && mdMappings.getOrDefault(cls.name, new HashMap<>()).containsKey(mdName + mdDesc)) return exceptions.getOrDefault(cls.name + mdName + mdDesc, EMPTY);
+  private List<String> findMethodExceptionsRec(ClassNode cls, String mdName, String mdDesc, Mappings mappings) {
+    if(INHERITABLE_METHODS.getOrDefault(cls.name, new HashSet<>(0)).contains(mdName + mdDesc) && mappings.hasMethodMapping(cls.name, mdName, mdDesc)) return mappings.getExceptions(cls.name, mdName, mdDesc);
     List<String> result;
-    if(classNodes.containsKey(cls.superName) && (result = findMethodExceptionsRec(classNodes.get(cls.superName), mdName, mdDesc)) != null) return result;
-    for(String iface : cls.interfaces) if(classNodes.containsKey(iface) && (result = findMethodExceptionsRec(classNodes.get(iface), mdName, mdDesc)) != null) return result;
+    if(mappings.hasClassMapping(cls.superName) && (result = findMethodExceptionsRec(classNodes.get(cls.superName), mdName, mdDesc, mappings)) != null) return result;
+    for(String iface : cls.interfaces) if(mappings.hasClassMapping(iface) && (result = findMethodExceptionsRec(classNodes.get(iface), mdName, mdDesc, mappings)) != null) return result;
     return null;
   }
 
-  private String remapMethodName(ClassNode cls, String mdName, String mdDesc) {
+  private String remapMethodName(ClassNode cls, String mdName, String mdDesc, Mappings mappings) {
     if(mdName.equals("<init>") || mdName.equals("<clinit>")) return mdName;
-    if(mdMappings.getOrDefault(cls.name, new HashMap<>(0)).containsKey(mdName + mdDesc)) return mdMappings.get(cls.name).get(mdName + mdDesc);
-    return findMethodMappingRec(cls, mdName, mdDesc);
+    if(mappings.hasMethodMapping(cls.name, mdName, mdDesc)) return mappings.getMethodName(cls.name, mdName, mdDesc);
+    return findMethodMappingRec(cls, mdName, mdDesc, mappings);
   }
 
-  private String findMethodMappingRec(ClassNode cls, String mdName, String mdDesc) {
-    if(INHERITABLE_METHODS.getOrDefault(cls.name, new HashSet<>(0)).contains(mdName + mdDesc) && mdMappings.getOrDefault(cls.name, new HashMap<>()).containsKey(mdName + mdDesc)) return mdMappings.get(cls.name).get(mdName + mdDesc);
+  private String findMethodMappingRec(ClassNode cls, String mdName, String mdDesc, Mappings mappings) {
+    if(INHERITABLE_METHODS.getOrDefault(cls.name, new HashSet<>(0)).contains(mdName + mdDesc) && mappings.hasMethodMapping(cls.name, mdName, mdDesc)) return mappings.getMethodName(cls.name, mdName, mdDesc);
     String result;
-    if(classNodes.containsKey(cls.superName) && !(result = findMethodMappingRec(classNodes.get(cls.superName), mdName, mdDesc)).equals(mdName)) return result;
-    for(String iface : cls.interfaces) if(classNodes.containsKey(iface) && !(result = findMethodMappingRec(classNodes.get(iface), mdName, mdDesc)).equals(mdName)) return result;
+    if(mappings.hasClassMapping(cls.superName) && !(result = findMethodMappingRec(classNodes.get(cls.superName), mdName, mdDesc, mappings)).equals(mdName)) return result;
+    for(String iface : cls.interfaces) if(mappings.hasClassMapping(iface) && !(result = findMethodMappingRec(classNodes.get(iface), mdName, mdDesc, mappings)).equals(mdName)) return result;
     return mdName;
   }
 
-  private String remapFieldName(ClassNode cls, String fName, String fDesc) {
-    if(fieldMappings.getOrDefault(cls.name, new HashMap<>()).containsKey(fName)) return fieldMappings.get(cls.name).get(fName);
-    return findFieldMappingRec(cls, fName, fDesc);
+  private String remapFieldName(ClassNode cls, String fName, String fDesc, Mappings mappings) {
+    if(mappings.hasFieldMapping(cls.name, fName)) return mappings.getFieldName(cls.name, fName);
+    return findFieldMappingRec(cls, fName, fDesc, mappings);
   }
 
-  private String findFieldMappingRec(ClassNode cls, String fName, String fDesc) {
-    if(SUBCLASS_ACCESSIBLE_FIELDS.getOrDefault(cls.name, new HashSet<>(0)).contains(fName + ":" + fDesc) && fieldMappings.getOrDefault(cls.name, new HashMap<>()).containsKey(fName)) return fieldMappings.get(cls.name).get(fName);
-    if(classNodes.containsKey(cls.superName)) return findFieldMappingRec(classNodes.get(cls.superName), fName, fDesc);
+  private String findFieldMappingRec(ClassNode cls, String fName, String fDesc, Mappings mappings) {
+    if(SUBCLASS_ACCESSIBLE_FIELDS.getOrDefault(cls.name, new HashSet<>(0)).contains(fName + ":" + fDesc) && mappings.hasFieldMapping(cls.name, fName)) return mappings.getFieldName(cls.name, fName);
+    if(mappings.hasClassMapping(cls.superName)) return findFieldMappingRec(classNodes.get(cls.superName), fName, fDesc, mappings);
     return fName;
   }
 
@@ -240,15 +221,16 @@ public class Remapper implements Util {
 
   private void remapJar(Path mappingsPath, Path outputPath) throws IOException {
     Files.write(outputPath, new byte[] {0x50,0x4B,0x05,0x06,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00});
-    readMappingsFile(mappingsPath);
+    Mappings mappings = MappingsInterface.findProvider(mappingsPath.toString()).parseMappings(mappingsPath);
     List<String> anonymousClassCandidates = classNodes.values().stream().filter(
-        node -> ((!node.fields.isEmpty() && node.fields.stream().map(f -> f.access).allMatch(Remapper::isSynthetic))
+        node -> ((!node.fields.isEmpty() && node.fields.stream().map(f -> f.access).allMatch(
+            Remapper::isSynthetic))
             || (node.interfaces.size() == 1 && node.methods.stream().allMatch(m -> !"<init>".equals(m.name) && !"<clinit>".equals(m.name) && isSynthetic(m.access)))))
         .map(c -> c.name).collect(Collectors.toList());
     classNodes.values().forEach(node -> {
           node.methods.forEach(mn -> {
             if(isSynthetic(mn.access) && !Type.getInternalName(Enum.class).equals(node.superName) && (mn.access & Opcodes.ACC_BRIDGE) == Opcodes.ACC_BRIDGE) {
-              System.out.println("class " + classMappings.get(node.name) + node.interfaces + " contains bridge method " + mn.name + ". It may have been an anonymous class");
+              System.out.println("class " + mappings.getClassName(node.name) + node.interfaces + " contains bridge method " + mn.name + ". It may have been an anonymous class");
               System.out.println("The remapper will now strip the bridge AND synthetic flag. This CAN introduce compile errors later on and it makes regenerification much harder");
               System.out.println("Look into generating the specialized method?");
               mn.access ^= Opcodes.ACC_BRIDGE;
@@ -265,74 +247,73 @@ public class Remapper implements Util {
     );
     classNodes.values().forEach(thrc(n -> {
       n.fields.forEach(f -> {
-        f.name = remapFieldName(n, f.name, f.desc);
-        f.desc = remapDescriptor(f.desc);
+        f.name = remapFieldName(n, f.name, f.desc, mappings);
+        f.desc = remapDescriptor(f.desc, mappings);
       });
       n.methods.forEach(mn -> {
-        List<String> exceptions = findMethodExceptions(n, mn.name, mn.desc);
+        List<String> exceptions = findMethodExceptions(n, mn.name, mn.desc, mappings);
         if(exceptions != null && !exceptions.isEmpty()) {
           if(mn.exceptions != null) mn.exceptions.addAll(exceptions);
           else mn.exceptions = new ArrayList<>(exceptions);
         }
-        mn.name = remapMethodName(n, mn.name, mn.desc);
-        mn.desc = remapDescriptor(mn.desc);
+        mn.name = remapMethodName(n, mn.name, mn.desc, mappings);
+        mn.desc = remapDescriptor(mn.desc, mappings);
         if(mn.localVariables != null) mn.localVariables.forEach(l -> {
-          l.desc = remapDescriptor(l.desc);
-          l.signature = remapSignature(l.signature);
+          l.desc = remapDescriptor(l.desc, mappings);
+          l.signature = remapSignature(l.signature, mappings);
         });
-        if(mn.signature != null) mn.signature = remapDescriptor(mn.signature);
-        mn.tryCatchBlocks.forEach(tcbn->tcbn.type = classMappings.getOrDefault(tcbn.type, tcbn.type));
+        if(mn.signature != null) mn.signature = remapDescriptor(mn.signature, mappings);
+        mn.tryCatchBlocks.forEach(tcbn->tcbn.type = mappings.getClassName(tcbn.type));
         mn.instructions.forEach(ins -> {
           if(ins instanceof FieldInsnNode) {
             FieldInsnNode fieldNode = (FieldInsnNode) ins;
-            if(classNodes.containsKey(fieldNode.owner)) fieldNode.name = remapFieldName(classNodes.get(fieldNode.owner), fieldNode.name, fieldNode.desc);
-            fieldNode.desc = remapDescriptor(fieldNode.desc);
-            if(fieldNode.owner.startsWith("[")) fieldNode.owner = remapDescriptor(fieldNode.owner);
-            else fieldNode.owner = classMappings.getOrDefault(fieldNode.owner, fieldNode.owner);
+            if(classNodes.containsKey(fieldNode.owner)) fieldNode.name = remapFieldName(classNodes.get(fieldNode.owner), fieldNode.name, fieldNode.desc, mappings);
+            fieldNode.desc = remapDescriptor(fieldNode.desc, mappings);
+            if(fieldNode.owner.startsWith("[")) fieldNode.owner = remapDescriptor(fieldNode.owner, mappings);
+            else fieldNode.owner = mappings.getClassName(fieldNode.owner);
           }
           if(ins instanceof MethodInsnNode) {
             MethodInsnNode methodNode = (MethodInsnNode) ins;
-            methodNode.name = classNodes.containsKey(methodNode.owner) ? remapMethodName(classNodes.get(methodNode.owner), methodNode.name, methodNode.desc) : methodNode.name;
-            if(methodNode.owner.startsWith("[")) methodNode.owner = remapDescriptor(methodNode.owner);
-            else methodNode.owner = classMappings.getOrDefault(methodNode.owner, methodNode.owner);
-            methodNode.desc = remapDescriptor(methodNode.desc);
+            methodNode.name = classNodes.containsKey(methodNode.owner) ? remapMethodName(classNodes.get(methodNode.owner), methodNode.name, methodNode.desc, mappings) : methodNode.name;
+            if(methodNode.owner.startsWith("[")) methodNode.owner = remapDescriptor(methodNode.owner, mappings);
+            else methodNode.owner = mappings.getClassName(methodNode.owner);
+            methodNode.desc = remapDescriptor(methodNode.desc, mappings);
           }
           if(ins instanceof MultiANewArrayInsnNode) {
             MultiANewArrayInsnNode manaNode = (MultiANewArrayInsnNode) ins;
-            manaNode.desc = remapDescriptor(manaNode.desc);
+            manaNode.desc = remapDescriptor(manaNode.desc, mappings);
           }
           if(ins instanceof TypeInsnNode) {
             TypeInsnNode typeNode = (TypeInsnNode) ins;
             if(typeNode.getOpcode() == Opcodes.NEW && anonymousClassCandidates.contains(typeNode.desc)) {
-              String outerMethodName = remapMethodName(n, mn.name, mn.desc);
-              String outerMethodDesc = remapDescriptor(mn.desc);
-              String outerClassName = classMappings.getOrDefault(n.name, n.name);
-              System.out.println(classMappings.getOrDefault(typeNode.desc, typeNode.desc) + " was likely an anonymous class in method " + outerMethodName + outerMethodDesc + " of class " + outerClassName);
+              String outerMethodName = remapMethodName(n, mn.name, mn.desc, mappings);
+              String outerMethodDesc = remapDescriptor(mn.desc, mappings);
+              String outerClassName = mappings.getClassName(n.name);
+              System.out.println(mappings.getClassName(typeNode.desc) + " was likely an anonymous class in method " + outerMethodName + outerMethodDesc + " of class " + outerClassName);
               System.out.println("Automatic Reconstruction is not yet finished");
               ClassNode anonClass = classNodes.get(typeNode.desc);
               //anonClass.outerMethodDesc = outerMethodDesc;
               //anonClass.outerMethod = outerMethodName;
               //anonClass.outerClass = outerClassName;
             }
-            typeNode.desc = typeNode.desc.startsWith("[") ? remapDescriptor(typeNode.desc) : classMappings
-                .getOrDefault(typeNode.desc, typeNode.desc);
+            typeNode.desc = typeNode.desc.startsWith("[") ? remapDescriptor(typeNode.desc, mappings) : mappings.getClassName(typeNode.desc);
           }
           if(ins instanceof LdcInsnNode) {
             LdcInsnNode ldcInsnNode = (LdcInsnNode) ins;
             if(ldcInsnNode.cst instanceof Type) ldcInsnNode.cst = Type
-                .getType(remapDescriptor(((Type) ldcInsnNode.cst).getDescriptor()));
+                .getType(remapDescriptor(((Type) ldcInsnNode.cst).getDescriptor(), mappings));
           }
           if(ins instanceof InvokeDynamicInsnNode) {
             InvokeDynamicInsnNode iDIN = (InvokeDynamicInsnNode) ins;
             String delCls = iDIN.desc.substring(iDIN.desc.indexOf(')') + 2, iDIN.desc.length() - 1);
-            if(classNodes.containsKey(delCls)) iDIN.name = remapMethodName(classNodes.get(delCls), iDIN.name, iDIN.bsmArgs[0].toString()); //Works on default MethodHandleLookup
-            iDIN.desc = remapDescriptor(iDIN.desc);
+            if(classNodes.containsKey(delCls)) iDIN.name = remapMethodName(classNodes.get(delCls), iDIN.name, iDIN.bsmArgs[0].toString(), mappings); //Works on default MethodHandleLookup
+            iDIN.desc = remapDescriptor(iDIN.desc, mappings);
             for(int i = 0; i < iDIN.bsmArgs.length; i++) {
               Object o = iDIN.bsmArgs[i];
-              if(o instanceof Type) iDIN.bsmArgs[i] = Type.getType(remapDescriptor(((Type) o).getDescriptor()));
+              if(o instanceof Type) iDIN.bsmArgs[i] = Type.getType(remapDescriptor(((Type) o).getDescriptor(), mappings));
               if(o instanceof Handle) {
                 Handle h = (Handle) o;
-                iDIN.bsmArgs[i] = new Handle(h.getTag(), classMappings.getOrDefault(h.getOwner(), h.getOwner()), remapMethodName(classNodes.get(h.getOwner()), h.getName(), h.getDesc()), remapDescriptor(h.getDesc()), h.isInterface());
+                iDIN.bsmArgs[i] = new Handle(h.getTag(), mappings.getClassName(h.getOwner()), remapMethodName(classNodes.get(h.getOwner()), h.getName(), h.getDesc(), mappings), remapDescriptor(h.getDesc(), mappings), h.isInterface());
               }
             }
           }
@@ -342,15 +323,15 @@ public class Remapper implements Util {
     Files.write(outputPath, new byte[]{80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
     try(FileSystem fs = createFS(outputPath)) {
       classNodes.values().forEach(thrc(n -> {
-        if(n.nestMembers != null) n.nestMembers = n.nestMembers.stream().map(nestMbr -> classMappings.getOrDefault(nestMbr, nestMbr)).collect(Collectors.toList());
-        n.nestHostClass = classMappings.getOrDefault(n.nestHostClass, n.nestHostClass);
-        n.name = classMappings.getOrDefault(n.name, n.name);
-        n.superName = classMappings.getOrDefault(n.superName, n.superName);
-        n.interfaces = n.interfaces.stream().map(i -> classMappings.getOrDefault(i, i)).collect(Collectors.toList());
+        if(n.nestMembers != null) n.nestMembers = n.nestMembers.stream().map(mappings::getClassName).collect(Collectors.toList());
+        n.nestHostClass = mappings.getClassName(n.nestHostClass);
+        n.name = mappings.getClassName(n.name);
+        n.superName =  mappings.getClassName(n.superName);
+        n.interfaces = n.interfaces.stream().map(mappings::getClassName).collect(Collectors.toList());
         n.innerClasses.forEach(c -> {
-          c.innerName = classMappings.getOrDefault(c.innerName, c.innerName);
-          c.outerName = classMappings.getOrDefault(c.outerName, c.outerName);
-          c.name = classMappings.getOrDefault(c.name, c.name);
+          c.innerName = mappings.getClassName(c.innerName);
+          c.outerName = mappings.getClassName(c.outerName);
+          c.name = mappings.getClassName(c.name);
         });
         ClassWriter w = new ClassWriter(ClassWriter.COMPUTE_MAXS);
         n.accept(w);
@@ -360,13 +341,13 @@ public class Remapper implements Util {
     }
   }
 
-  private String remapSignature(String signature) {
+  private String remapSignature(String signature, Mappings mappings) {
     if(signature == null) return null;
     int p = signature.indexOf('<');
     if(p == -1) {
-      return remapDescriptor(signature);
+      return remapDescriptor(signature, mappings);
     }
-    String remapped = remapDescriptor(signature.substring(0, p) + ';');
+    String remapped = remapDescriptor(signature.substring(0, p) + ';', mappings);
     StringBuilder builder = new StringBuilder();
     builder.append(remapped, 0, remapped.length() -1);
     builder.append('<');
@@ -390,7 +371,7 @@ public class Remapper implements Util {
         currentName.add(c);
         if(depth != 0) continue;
         // deobfuscate the finished signature and append it
-        builder.append(remapSignature(toString(currentName)));
+        builder.append(remapSignature(toString(currentName), mappings));
         currentName.clear();
         inWord = false;
       } else if(c == '<') {
@@ -407,7 +388,7 @@ public class Remapper implements Util {
    * @param descriptor the descriptor to remap
    * @return the remapped descriptor
    */
-  private String remapDescriptor(String descriptor) {
+  private String remapDescriptor(String descriptor, Mappings mappings) {
     StringBuilder result = new StringBuilder();
     //Method descriptors start with '('
     if(descriptor.startsWith("(")) {
@@ -435,7 +416,7 @@ public class Remapper implements Util {
           } else if(c == ';') {
             currentName.add(c);
             // deobfuscate the finished descriptor and append it
-            result.append(remapDescriptor(toString(currentName)));
+            result.append(remapDescriptor(toString(currentName), mappings));
             currentName.clear();
             inWord = false;
           } else currentName.add(c);
@@ -458,10 +439,10 @@ public class Remapper implements Util {
     // Strip L and ; for lookup (Lmy/package/Class; -> my/package/Class)
     cpy = cpy.substring(1, cpy.length() - 1);
     // the mappings do not contain the class, no deobfuscation needed (e.g. java/lang/String...)
-    if(!classMappings.containsKey(cpy)) return result.toString() + descriptor;
+    if(!mappings.hasClassMapping(cpy)) return result.toString() + descriptor;
     //prepend the array dimensions if any
     for(int i = 0; i < arrDim; i++) result.append('[');
     //convert deobfed class name to descriptor (my/deobfed/ClassName -> Lmy/deobfed/ClassName;)
-    return result.append('L').append(classMappings.get(cpy)).append(';').toString();
+    return result.append('L').append(mappings.getClassName(cpy)).append(';').toString();
   }
 }
