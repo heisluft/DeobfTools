@@ -55,11 +55,10 @@ public class Remapper implements Util {
   //className + methodName + methodDesc -> list of exceptions to add (can be obf.)
   private final Map<String, List<String>> exceptions = new HashMap<>();
   private final Map<String, ClassNode> classNodes = new HashMap<>();
-  private final Path mappingsPath, inputPath;
+  private final Path inputPath;
 
-  private Remapper(Path inputPath, Path mappingsPath, boolean buildClassTree, List<String> ignorePaths) throws IOException {
+  private Remapper(Path inputPath, boolean buildClassTree, List<String> ignorePaths) throws IOException {
     this.inputPath = inputPath;
-    this.mappingsPath = mappingsPath;
     if(buildClassTree) try(FileSystem fs = createFS(inputPath)) {
       Files.walk(fs.getPath("/")).filter(path -> path.toString().endsWith(".class") && ignorePaths.stream().noneMatch(s -> path.toString().startsWith(s))).map(thr(this::parseClass)).forEach(c -> classNodes.put(c.name, c));
     }
@@ -126,16 +125,17 @@ public class Remapper implements Util {
     }
     if(!ignoredOpts.isEmpty()) System.out.println("ignored options: " + ignoredOpts);
     try {
-      Remapper remapper = new Remapper(Paths.get(args[1]), Paths.get(args[2]), action.equals("remap"), ignoredPaths);
+      Remapper remapper = new Remapper(Paths.get(args[1]), action.equals("remap"), ignoredPaths);
+      Path mappingsPath = Paths.get(args[2]);
       switch(action) {
         case "remap":
-          remapper.remapJar(outPath);
+          remapper.remapJar(mappingsPath, outPath);
           break;
         case "genReverseMappings":
-          remapper.buildReverseMappings();
+          remapper.buildReverseMappings(mappingsPath);
           break;
         default:
-          MappingsInterface.writeFergieMappings(MappingsInterface.generateMappings(Paths.get(args[1]), ignoredPaths), Paths.get(args[2]));
+          MappingsInterface.writeFergieMappings(MappingsInterface.generateMappings(Paths.get(args[1]), ignoredPaths), mappingsPath);
           break;
       }
     } catch(IOException e) {
@@ -143,7 +143,7 @@ public class Remapper implements Util {
     }
   }
 
-  private void readMappingsFile() throws IOException {
+  private void readMappingsFile(Path mappingsPath) throws IOException {
     Files.readAllLines(mappingsPath).stream().map(line -> line.split(" ")).forEach(line -> {
       if("MD:".equals(line[FRG_MAPPING_TYPE_INDEX])) {
         if(line.length < 5) throw new IllegalArgumentException("Line too short (" + join(line) + ")");
@@ -162,7 +162,7 @@ public class Remapper implements Util {
     });
   }
 
-  private void buildReverseMappings() throws IOException {
+  private void buildReverseMappings(Path mappingsPath) throws IOException {
     List<String> inputLines = Files.readAllLines(inputPath);
     List<String> revLines = new ArrayList<>(inputLines.size());
     inputLines.stream().map(line -> line.split(" ")).forEach(line -> {
@@ -238,9 +238,9 @@ public class Remapper implements Util {
     return (access & Opcodes.ACC_SYNTHETIC) == Opcodes.ACC_SYNTHETIC;
   }
 
-  private void remapJar(Path outputPath) throws IOException {
+  private void remapJar(Path mappingsPath, Path outputPath) throws IOException {
     Files.write(outputPath, new byte[] {0x50,0x4B,0x05,0x06,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00});
-    readMappingsFile();
+    readMappingsFile(mappingsPath);
     List<String> anonymousClassCandidates = classNodes.values().stream().filter(
         node -> ((!node.fields.isEmpty() && node.fields.stream().map(f -> f.access).allMatch(Remapper::isSynthetic))
             || (node.interfaces.size() == 1 && node.methods.stream().allMatch(m -> !"<init>".equals(m.name) && !"<clinit>".equals(m.name) && isSynthetic(m.access)))))
