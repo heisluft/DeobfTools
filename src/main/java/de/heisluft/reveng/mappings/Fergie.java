@@ -9,6 +9,7 @@ import org.objectweb.asm.tree.MethodNode;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
@@ -29,30 +30,39 @@ import java.util.stream.Stream;
 import static de.heisluft.function.FunctionalUtil.thr;
 
 /**
- * Fergie is a mapping generator. As we need to fix compile errors in source we may not want
- * to update our patches for every naming change.
- *
- * The dev chain looks like this
- * 1. Preprocess the jar file, restore all possible meta infos
- * 2. Generate dummy mappings
- * 3. Let Fergie process the mappings
- * 4. Remap jar with Fergie mappings
- * 5. Decompile
- * 6. Write Patches with Fergie-provided names and add Exceptions to the Fergie mappings
- * 7. Done
- *
- * The user is provided with obf->src and Fergie->src mappings as well as all needed patches.
- * In every deobf chain we do the following:
- * 1. Rename patches with Fergie->src mappings
- * 2. Remap the jar with obf->src mappings
- * 3. Decompile
- * 4. Patch with our renamed Patches.
- *
- * As Fergie mappings are unique renamings can be done by simple string replacements
- * without having to lex and parse the processed files.
- *
+ * Fergie is a mappings parser and generator.
+ * As we need to fix compile errors in source we may not want to update our patches for every naming change
+ * <br>
+ * The initial development process for an obfuscated jar looks like this:
+ * <ol>
+ *  <li>Preprocess the jar file, restore all possible meta infos</li>
+ *  <li>Let Fergie generate unique mappings</li>
+ *  <li>Remap jar with Fergie mappings</li>
+ *  <li>Decompile</li>
+ *  <li>Add Exceptions and src class names to the Fergie mappings</li>
+ *  <li>Write Patches with Fergie-provided names</li>
+ *  <li>Copy the mappings to another file</li>
+ *  <li>Write obf -> src mappings for fields & methods to that file</li>
+ * </ol>
+ * <br>
+ * For a user using the jar as a library, e.g. a modder, we can automatically:
+ * <ol>
+ *  <li>Generate Fergie -> src mappings from obf -> Fergie and obf -> source mappings</li>
+ *  <li>Rename patches with Fergie -> src mappings</li>
+ *  <li>Remap the jar with obf -> src mappings</li>
+ *  <li>Decompile</li>
+ *  <li>Patch with our renamed Patches</li>
+ *  <li>Recompile</li>
+ *  </ol>
+ * <br>
+ * As Fergie mappings are unique renamings can be done by simple string replacements without having
+ * to lex and parse java source files (they may not even be parsable for certain errors).
  */
 public class Fergie implements Util, MappingsProvider {
+  /**
+   * A singleton instance is used for parsing and writing mappings.
+   * Generating mappings is stateful so a new instance is needed everytime for that job
+   */
   static final Fergie INSTANCE = new Fergie();
 
   private static final int FRG_MAPPING_TYPE_INDEX = 0;
@@ -67,15 +77,9 @@ public class Fergie implements Util, MappingsProvider {
    * A set containing all methodNames + descriptors of java/lang/Object
    */
   private static final Set<String> OBJECT_MDS = new HashSet<>();
-
-  //className -> methodName + methodDesc
-  private final Map<String, Set<String>> inheritableMethods = new HashMap<>();
-  private final Map<String, ClassNode> classNodes = new HashMap<>();
-
   /**
-   * A List of all java keywords with length 3 or below.
-   * Classes with these names will have their name changed by the map task in order to allow simple
-   * decompilation afterwards
+   * A List of all java keywords with length 3 or below. Classes with these names will have their
+   * name changed by the map task in order to allow simple decompilation afterwards
    */
   private static final List<String> RESERVED_WORDS = Arrays.asList(
       "do", "for", "if", "int", "new", "try", "to"
@@ -88,11 +92,24 @@ public class Fergie implements Util, MappingsProvider {
   }
 
   /**
-   * Returns if a given access modifier has all given flags.
-   * For each flag {@code (access & flag) == flag} must hold true
+   * A Set of all inheritable methods for one class addressed as:
+   * className -> methodName + methodDesc
+   */
+  private final Map<String, Set<String>> inheritableMethods = new HashMap<>();
+  /**
+   * A cache of all classes within the jar to emit mappings for, addressed by their name
+   */
+  private final Map<String, ClassNode> classNodes = new HashMap<>();
+
+  /**
+   * Returns if a given access modifier has all given flags. For each flag {@code (access & flag) ==
+   * flag} must hold true
    *
-   * @param access The value to check
-   * @param flags all flags that must be present
+   * @param access
+   *     The value to check
+   * @param flags
+   *     all flags that must be present
+   *
    * @return if all flags are present
    */
   private static boolean hasAll(int access, int... flags) {
@@ -101,37 +118,60 @@ public class Fergie implements Util, MappingsProvider {
     return true;
   }
 
-  private void buildClassHierarchy(Class<?> sup, String addTo) {
-    if(sup != null && !sup.getName().equals(Object.class.getName())) {
-      for(Method m : sup.getDeclaredMethods())
-        if(Util.hasNone(m.getModifiers(), Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE, Opcodes.ACC_STATIC))
+  /**
+   * Recursively searches for methods inherited to addTom adding them to this.inheritableMethods
+   *
+   * @param cls
+   *     the current class to be indexed
+   * @param addTo
+   *     the name of the class to find inherited methods for
+   */
+  private void gatherInheritedMethods(Class<?> cls, String addTo) {
+    if(cls != null && !cls.getName().equals(Object.class.getName())) {
+      for(Method m : cls.getDeclaredMethods())
+        if(Util.hasNone(m.getModifiers(), Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE,
+            Opcodes.ACC_STATIC))
           inheritableMethods.get(addTo).add(m.getName() + Type.getMethodDescriptor(m));
-      for(Class<?> iface : sup.getInterfaces()) buildClassHierarchy(iface, addTo);
-      buildClassHierarchy(sup.getSuperclass(), addTo);
+      for(Class<?> iface : cls.getInterfaces()) gatherInheritedMethods(iface, addTo);
+      gatherInheritedMethods(cls.getSuperclass(), addTo);
     }
   }
 
-  private void buildClassHierarchy(String nodeName, String addTo) {
-    if(!classNodes.containsKey(nodeName)) {
+  /**
+   * Recursively searches for methods inherited to addTom adding them to this.inheritableMethods
+   *
+   * @param cls
+   *     the current class to be indexed
+   * @param addTo
+   *     the name of the class to find inherited methods for
+   */
+  private void gatherInheritedMethods(String cls, String addTo) {
+    if(!classNodes.containsKey(cls)) {
       try {
-        buildClassHierarchy(Class.forName(nodeName.replace("/", ".")), addTo);
+        gatherInheritedMethods(Class.forName(cls.replace("/", ".")), addTo);
       } catch(ClassNotFoundException e) {
         e.printStackTrace();
       }
       return;
     }
-    ClassNode node = classNodes.get(nodeName);
+    ClassNode node = classNodes.get(cls);
     for(MethodNode m : node.methods)
       if(Util.hasNone(m.access, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE, Opcodes.ACC_STATIC))
         inheritableMethods.get(addTo).add(m.name + m.desc);
-    for(String iface : node.interfaces) buildClassHierarchy(iface, addTo);
-    buildClassHierarchy(node.superName, addTo);
+    for(String iface : node.interfaces) gatherInheritedMethods(iface, addTo);
+    gatherInheritedMethods(node.superName, addTo);
   }
 
+  /**
+   * Searches for methods inherited to cn adding them to this.inheritableMethods
+   *
+   * @param cn
+   *     the name of the class to find inherited methods for
+   */
   private void gatherInheritedMethods(String cn) {
     if(inheritableMethods.containsKey(cn)) return;
     inheritableMethods.put(cn, new HashSet<>());
-    buildClassHierarchy(cn, cn);
+    gatherInheritedMethods(cn, cn);
   }
 
   public Mappings parseMappings(Path input) throws IOException {
@@ -166,20 +206,32 @@ public class Fergie implements Util, MappingsProvider {
    *     the name of the class to generate for
    *
    * @return a set containing <code>values()[LclsName;</code> and <code>valueOf
-   * (Ljava/lang/String;)LclsName;</code>
+   *     (Ljava/lang/String;)LclsName;</code>
    */
   private Stream<String> genEnumMetDescs(String clsName) {
     return Stream.of("values()[L" + clsName + ";", "valueOf(Ljava/lang/String;)L" + clsName + ";");
   }
 
+  /**
+   * Writes Mappings in frg file format to path.
+   *
+   * @param mappings
+   *     the mappings to serialize
+   * @param to
+   *     the path to write to
+   *
+   * @throws IOException
+   *     If the path could not be written to
+   */
   void writeMappings(Mappings mappings, Path to) throws IOException {
     List<String> lines = new ArrayList<>();
-    mappings.classes.forEach((k,v) -> lines.add("CL: " + k + " " + v));
+    mappings.classes.forEach((k, v) -> lines.add("CL: " + k + " " + v));
     mappings.fields.forEach((clsName, map) -> map.forEach((obfFd, deobfFd) -> lines.add("FD: " + clsName + " " + obfFd + " " + deobfFd)));
-    mappings.methods.forEach((clsName, map) -> map.forEach((obfMet, deobfName) -> lines.add("MD: " + clsName + " " + obfMet._1 + " " + obfMet._2 +  " " + deobfName)));
+    mappings.methods.forEach((clsName, map) -> map.forEach((obfMet, deobfName) -> lines.add("MD: " + clsName + " " + obfMet._1 + " " + obfMet._2 + " " + deobfName)));
     lines.sort(Comparator.naturalOrder());
     Files.write(to, lines);
   }
+
   /**
    * Generates default mappings for a given jar. These mappings are guaranteed to generate unique
    * method names.
@@ -187,8 +239,8 @@ public class Fergie implements Util, MappingsProvider {
    * @param input
    *     the jar to generate for
    * @param ignored
-   *     a list of paths to be ignored. these paths will be loaded to gather inheritance info
-   *     but will not have mappings emitted
+   *     a list of paths to be ignored. these paths will be loaded to gather inheritance info but
+   *     will not have mappings emitted
    *
    * @return the generated mappings
    *
@@ -205,66 +257,115 @@ public class Fergie implements Util, MappingsProvider {
     }
     Set<String> packages = classNodes.values().stream().filter(p -> p.name.contains("/")).map(p -> p.name.substring(0, p.name.lastIndexOf("/"))).collect(Collectors.toSet());
     classNodes.values().stream().map(n -> n.name).forEach(cn -> {
-          String modifiedName = cn;
-          // Reserved Words should be escaped automatically
-          if(RESERVED_WORDS.contains(modifiedName)) {
-            StringBuilder modBuilder = new StringBuilder(modifiedName);
-            // Another class could be named _if, in that case this class will be named __if
-            while(classNodes.containsKey(modBuilder.toString())) modBuilder.insert(0, "_");
-            modifiedName = modBuilder.toString();
-          }
-          // Reserved Words should be escaped automatically
-          else if(modifiedName.contains("/") && RESERVED_WORDS.contains(modifiedName.substring(modifiedName.lastIndexOf('/') + 1))) {
-            // Again, we need to avoid naming blah/if to blah/_if if there is already a so named class
-            while(classNodes.containsKey(modifiedName)) {
-              String[] split = splitAt(modifiedName, modifiedName.lastIndexOf("/"));
-              modifiedName = split[0] + "/_" + split[1];
-            }
-          }
-          // Classes and Packages must not share names, so just prepend underscores until a unique class name is guaranteed
-          if(packages.contains(modifiedName)) {
-            if(!modifiedName.contains("/")) while(packages.contains(modifiedName) || classNodes.containsKey(modifiedName))
-              modifiedName = "_" + modifiedName;
-            else while(packages.contains(modifiedName) || classNodes.containsKey(modifiedName)) {
-              String[] split = splitAt(modifiedName, modifiedName.lastIndexOf("/"));
-              modifiedName = split[0] + "/_" + split[1];
-            }
-          }
-          if(ignored.stream().noneMatch(modifiedName::startsWith))
-            mappings.classes.put(cn, modifiedName);
-        });
+      String modifiedName = cn;
+      // Reserved Words should be escaped automatically
+      if(RESERVED_WORDS.contains(modifiedName)) {
+        StringBuilder modBuilder = new StringBuilder(modifiedName);
+        // Another class could be named _if, in that case this class will be named __if
+        while(classNodes.containsKey(modBuilder.toString())) modBuilder.insert(0, "_");
+        modifiedName = modBuilder.toString();
+      }
+      // Reserved Words should be escaped automatically
+      else if(modifiedName.contains("/") && RESERVED_WORDS.contains(modifiedName.substring(modifiedName.lastIndexOf('/') + 1))) {
+        // Again, we need to avoid naming blah/if to blah/_if if there is already a so named class
+        while(classNodes.containsKey(modifiedName)) {
+          String[] split = splitAt(modifiedName, modifiedName.lastIndexOf("/"));
+          modifiedName = split[0] + "/_" + split[1];
+        }
+      }
+      // Classes and Packages must not share names, so just prepend underscores until a unique class name is guaranteed
+      if(packages.contains(modifiedName)) {
+        if(!modifiedName.contains("/"))
+          while(packages.contains(modifiedName) || classNodes.containsKey(modifiedName))
+            modifiedName = "_" + modifiedName;
+        else while(packages.contains(modifiedName) || classNodes.containsKey(modifiedName)) {
+          String[] split = splitAt(modifiedName, modifiedName.lastIndexOf("/"));
+          modifiedName = split[0] + "/_" + split[1];
+        }
+      }
+      if(ignored.stream().noneMatch(modifiedName::startsWith))
+        mappings.classes.put(cn, modifiedName);
+    });
     AtomicInteger fieldCounter = new AtomicInteger(1);
     AtomicInteger methodCounter = new AtomicInteger(1);
-    classNodes.values().stream().filter(c -> ignored.stream().noneMatch(c.name::startsWith)).forEach(cn -> {
-        gatherInheritedMethods(cn.superName);
-        cn.interfaces.forEach(this::gatherInheritedMethods);
-        cn.fields.forEach(fn -> {
-          if (cn.superName.equals(Type.getInternalName(Enum.class))&&fn.desc.equals("[L" + cn.name + ";") && hasAll(fn.access, Opcodes.ACC_STATIC, Opcodes.ACC_SYNTHETIC, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE)) {
-            mappings.fields.computeIfAbsent(cn.name, s -> new HashMap<>()).put(fn.name, "$VALUES");
-          }
-          else mappings.fields.computeIfAbsent(cn.name, s -> new HashMap<>()).put(fn.name, "fd_" + fieldCounter.getAndIncrement() + "_" + fn.name);
+    classNodes.values().stream().filter(c -> ignored.stream().noneMatch(c.name::startsWith))
+        .forEach(cn -> {
+          gatherInheritedMethods(cn.superName);
+          cn.interfaces.forEach(this::gatherInheritedMethods);
+          cn.fields.forEach(fn -> {
+            // Automatically emit enum $VALUES mapping
+            if(cn.superName.equals(Type.getInternalName(Enum.class)) && fn.desc.equals("[L" + cn.name + ";") && hasAll(fn.access, Opcodes.ACC_STATIC, Opcodes.ACC_SYNTHETIC, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE)) {
+              mappings.fields.computeIfAbsent(cn.name, s -> new HashMap<>()).put(fn.name, "$VALUES");
+            }
+            // Dont generate Mappings for serialVersionUID
+            else if(!(fn.name.equals("serialVersionUID") && fn.desc.equals("J") && hasAll(fn.access, Opcodes.ACC_STATIC, Opcodes.ACC_FINAL) && isSerializable(cn)))
+              mappings.fields.computeIfAbsent(cn.name, s -> new HashMap<>()).put(fn.name, "fd_" + fieldCounter.getAndIncrement() + "_" + fn.name);
+          });
+          Set<String> superMDs = inheritableMethods.getOrDefault(cn.superName, new HashSet<>());
+          Set<String> ifaceMDs = cn.interfaces.stream().filter(inheritableMethods::containsKey).map(inheritableMethods::get).flatMap(Collection::stream).collect(Collectors.toSet());
+          cn.methods.forEach(mn -> {
+            if((mn.access & Opcodes.ACC_STATIC) == Opcodes.ACC_STATIC) {
+              if(!"<clinit>".equals(mn.name) && !(cn.superName.equals(Type.getInternalName(Enum.class)) && genEnumMetDescs(cn.name).anyMatch(s -> s.equals(mn.name + mn.desc))))
+                mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(new Tuple2<>(mn.name, mn.desc), "md_" + methodCounter.getAndIncrement() + "_" + mn.name);
+            } else if(noneContains(mn.name + mn.desc, superMDs, ifaceMDs, OBJECT_MDS))
+              mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(new Tuple2<>(mn.name, mn.desc), mn.name.equals("<init>") ? mn.name : ("md_" + methodCounter.getAndIncrement() + "_" + mn.name));
+          });
         });
-        Set<String> superMDs = inheritableMethods.getOrDefault(cn.superName, new HashSet<>());
-        Set<String> ifaceMDs = cn.interfaces.stream().filter(inheritableMethods::containsKey).map(inheritableMethods::get).flatMap(Collection::stream).collect(Collectors.toSet());
-        cn.methods.forEach(mn -> {
-          if((mn.access & Opcodes.ACC_STATIC) == Opcodes.ACC_STATIC) {
-            if(!"<clinit>".equals(mn.name) && !(cn.superName.equals(Type.getInternalName(Enum.class)) && genEnumMetDescs(cn.name).anyMatch(s -> s.equals(mn.name + mn.desc))))
-              mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(new Tuple2<>(mn.name, mn.desc), "md_" + methodCounter.getAndIncrement() + "_" + mn.name);
-          } else if(noneContains(mn.name + mn.desc, superMDs, ifaceMDs, OBJECT_MDS))
-            mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(new Tuple2<>(mn.name, mn.desc), mn.name.equals("<init>") ? mn.name : ("md_" + methodCounter.getAndIncrement() + "_" + mn.name));
-      });
-    });
     return mappings;
   }
 
   /**
-   * Returns true if none of a given set of sets contains a certain value t.
-   * This is both shorter to write than checking each set individually
-   * and faster than combining all sets and calling contains on that combined set
+   * Returns whether a class inherits from java/io/Serializable in any way, either because it is an
+   * interface subclassing Serializable either directly or indirectly or because its a normal class
+   * either directly implementing Serializable or subclassing a class directly or indirectly that
+   * does
    *
-   * @param t the value to look for
-   * @param sets the sets to check
-   * @param <T> the Type of the value and the sets to check
+   * @param node
+   *     the class to check
+   *
+   * @return whether thr class inherits from Serializable in any way
+   */
+  private boolean isSerializable(Class<?> node) {
+    return node.equals(Serializable.class) ||
+        Arrays.asList(node.getInterfaces()).contains(Serializable.class) ||
+        !node.getSuperclass().equals(Object.class) && isSerializable(node.getSuperclass());
+  }
+
+  /**
+   * Returns whether a class inherits from java/io/Serializable in any way, either because it is an
+   * interface subclassing Serializable either directly or indirectly or because its a normal class
+   * either directly implementing Serializable or subclassing a class directly or indirectly that
+   * does
+   *
+   * @param node
+   *     the class node to check
+   *
+   * @return whether the class inherits from Serializable in any way
+   */
+  private boolean isSerializable(ClassNode node) {
+    if(node.interfaces.contains("java/io/Serializable")) return true;
+    if(node.superName.equals("java/io/Serializable")) return true;
+    if(node.superName.equals("java/lang/Object")) return false;
+    if(classNodes.containsKey(node.superName))
+      return isSerializable(classNodes.get(node.superName));
+    try {
+      return isSerializable(Class.forName(node.superName.replace('/', '.')));
+    } catch(ClassNotFoundException exception) {
+      return false;
+    }
+  }
+
+  /**
+   * Returns true if none of a given set of sets contains a certain value t. This is both shorter to
+   * write than checking each set individually and faster than combining all sets and calling
+   * contains on that combined set
+   *
+   * @param t
+   *     the value to look for
+   * @param sets
+   *     the sets to check
+   * @param <T>
+   *     the Type of the value and the sets to check
    *
    * @return true if none of the sets contain t, false otherwise
    */
@@ -272,30 +373,5 @@ public class Fergie implements Util, MappingsProvider {
   private final <T> boolean noneContains(T t, Set<T>... sets) {
     for(Set<T> set : sets) if(set.contains(t)) return false;
     return true;
-  }
-
-  private void emitIntermediateMappings(Path obfMappings, Path to) throws IOException {
-    List<String> lines = Files.readAllLines(obfMappings);
-    AtomicInteger mdCounter = new AtomicInteger(1);
-    AtomicInteger fdCounter = new AtomicInteger(1);
-    Files.write(to, lines.stream().filter(l -> !l.startsWith("CL: ")).map(line -> {
-      String[] split = line.split(" ");
-      StringBuilder builder = new StringBuilder(split[0]);
-      boolean isMethod = split[0].equals("MD:");
-      int i;
-      for(i = 1; i < (isMethod ? 4 : 3); i++) {
-        builder.append(" ").append(split[i]);
-      }
-      builder.append(isMethod ? " md_" : " fd_").append(isMethod ? mdCounter.getAndIncrement() : fdCounter.getAndIncrement()).append('_')
-          .append(split[i]);
-      for(i++; i < split.length; i++) {
-        builder.append(" ").append(split[i]);
-      }
-      return builder.toString();
-    }).collect(Collectors.toList()));
-  }
-
-  private void renamePatches(Path inter, Path patchDir, Path outDir) throws IOException {
-
   }
 }
