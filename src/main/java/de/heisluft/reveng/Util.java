@@ -19,6 +19,23 @@ import java.util.Map;
  */
 public interface Util {
   /**
+   * Returns if a given value has none of the given flags. For each flag {@code (value & flag) !=
+   * flag} must hold true
+   *
+   * @param value
+   *     The value to check
+   * @param flags
+   *     all flags that must not be present
+   *
+   * @return if none of the given flags are present
+   */
+  static boolean hasNone(int value, int... flags) {
+    for(int flag : flags)
+      if((value & flag) == flag) return false;
+    return true;
+  }
+
+  /**
    * Creates a zip file system for a given path and returns it. If the requested path does not exist
    * it will be created.
    *
@@ -36,24 +53,28 @@ public interface Util {
     URI uri = URI.create("jar:file:/" + path.toAbsolutePath().toString().replace('\\', '/'));
     return FileSystems.newFileSystem(uri, map);
   }
-  /**
-   * Returns if a given value has none of the given flags.
-   * For each flag {@code (value & flag) != flag} must hold true
-   *
-   * @param value The value to check
-   * @param flags all flags that must not be present
-   * @return if none of the given flags are present
-   */
-  static boolean hasNone(int value, int... flags) {
-    for(int flag : flags)
-      if((value & flag) == flag) return false;
-    return true;
-  }
 
-  default  <K, V> V getOrPut(Map<K, V> map, K key, V v) {
+  /**
+   * Retrieves a value from a map with a fallback. If a mapping for the key does not exist, it will
+   * be created within the map and fallback is returned.
+   *
+   * @param map
+   *     the map to look in
+   * @param key
+   *     the key to retrieve / store a value for
+   * @param fallback
+   *     the value to map to key if key is not already mapped
+   * @param <K>
+   *     the keys type
+   * @param <V>
+   *     the values type
+   *
+   * @return the value mapped to the specified key
+   */
+  default <K, V> V getOrPut(Map<K, V> map, K key, V fallback) {
     if(map.containsKey(key)) return map.get(key);
-    map.put(key, v);
-    return v;
+    map.put(key, fallback);
+    return fallback;
   }
 
   /**
