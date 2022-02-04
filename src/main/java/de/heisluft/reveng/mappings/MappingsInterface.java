@@ -64,6 +64,6 @@ public class MappingsInterface {
    *     if the mappings could not be written
    */
   public static void writeFergieMappings(Mappings mappings, Path output) throws IOException {
-    new Fergie().writeMappings(mappings, output);
+    Fergie.INSTANCE.writeMappings(mappings, output);
   }
 }
