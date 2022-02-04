@@ -86,12 +86,6 @@ public class Analyzer implements Util {
     
   }
 
-  private static  <K, V> V getOrPut(Map<K, V> map, K key, V v) {
-    if(map.containsKey(key)) return map.get(key);
-    map.put(key, v);
-    return v;
-  }
-
   public static void main(String[] args) throws IOException {
     System.out.println("Class Heuristics for Outer-Inner Relationships - Project CHOIR\n");
     new Analyzer();

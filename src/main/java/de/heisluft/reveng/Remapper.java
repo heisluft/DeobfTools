@@ -65,20 +65,6 @@ public class Remapper implements Util {
     }
   }
 
-  /**
-   * Returns if a given access modifier has none of the given flags.
-   * For each flag {@code (access & flag) != flag} must hold true
-   *
-   * @param access The value to check
-   * @param flags all flags that must not be present
-   * @return if none of the given flags are present
-   */
-  private static boolean hasNone(int access, int... flags) {
-    for(int flag : flags)
-      if((access & flag) == flag) return false;
-    return true;
-  }
-
   public static void main(String[] args) {
     if(args.length < 3 || !(args[0].equals("map") || args[0].equals("genReverseMappings") || args[0].equals("remap"))) {
       System.out.println("Heislufts Remapping Service version 1.0\n A deobfuscator and mappings generator\n");
@@ -268,11 +254,11 @@ public class Remapper implements Util {
               mn.access ^= Opcodes.ACC_BRIDGE;
               mn.access ^= Opcodes.ACC_SYNTHETIC;
             }
-            if(hasNone(mn.access, Opcodes.ACC_PRIVATE))
+            if(Util.hasNone(mn.access, Opcodes.ACC_PRIVATE))
               INHERITABLE_METHODS.computeIfAbsent(node.name, s -> new HashSet<>()).add(mn.name + mn.desc);
           });
           node.fields.forEach(fn -> {
-            if(hasNone(fn.access, Opcodes.ACC_PRIVATE))
+            if(Util.hasNone(fn.access, Opcodes.ACC_PRIVATE))
               SUBCLASS_ACCESSIBLE_FIELDS.computeIfAbsent(node.name, s -> new HashSet<>()).add(fn.name + ":" + fn.desc);
           });
         }

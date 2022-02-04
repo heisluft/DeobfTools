@@ -36,6 +36,25 @@ public interface Util {
     URI uri = URI.create("jar:file:/" + path.toAbsolutePath().toString().replace('\\', '/'));
     return FileSystems.newFileSystem(uri, map);
   }
+  /**
+   * Returns if a given value has none of the given flags.
+   * For each flag {@code (value & flag) != flag} must hold true
+   *
+   * @param value The value to check
+   * @param flags all flags that must not be present
+   * @return if none of the given flags are present
+   */
+  static boolean hasNone(int value, int... flags) {
+    for(int flag : flags)
+      if((value & flag) == flag) return false;
+    return true;
+  }
+
+  default  <K, V> V getOrPut(Map<K, V> map, K key, V v) {
+    if(map.containsKey(key)) return map.get(key);
+    map.put(key, v);
+    return v;
+  }
 
   /**
    * Parses the given file to a ClassNode

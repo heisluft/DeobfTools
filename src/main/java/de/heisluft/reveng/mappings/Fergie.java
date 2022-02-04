@@ -83,7 +83,7 @@ public class Fergie implements Util, MappingsProvider {
 
   static {
     for(Method method : Object.class.getDeclaredMethods())
-      if(hasNone(method.getModifiers(), Opcodes.ACC_STATIC, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE))
+      if(Util.hasNone(method.getModifiers(), Opcodes.ACC_STATIC, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE))
         OBJECT_MDS.add(method.getName() + Type.getMethodDescriptor(method));
   }
 
@@ -101,24 +101,10 @@ public class Fergie implements Util, MappingsProvider {
     return true;
   }
 
-  /**
-   * Returns if a given access modifier has none of the given flags.
-   * For each flag {@code (access & flag) != flag} must hold true
-   *
-   * @param access The value to check
-   * @param flags all flags that must not be present
-   * @return if none of the given flags are present
-   */
-  private static boolean hasNone(int access, int... flags) {
-    for(int flag : flags)
-      if((access & flag) == flag) return false;
-    return true;
-  }
-
   private void buildClassHierarchy(Class<?> sup, String addTo) {
     if(sup != null && !sup.getName().equals(Object.class.getName())) {
       for(Method m : sup.getDeclaredMethods())
-        if(hasNone(m.getModifiers(), Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE, Opcodes.ACC_STATIC))
+        if(Util.hasNone(m.getModifiers(), Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE, Opcodes.ACC_STATIC))
           inheritableMethods.get(addTo).add(m.getName() + Type.getMethodDescriptor(m));
       for(Class<?> iface : sup.getInterfaces()) buildClassHierarchy(iface, addTo);
       buildClassHierarchy(sup.getSuperclass(), addTo);
@@ -136,7 +122,7 @@ public class Fergie implements Util, MappingsProvider {
     }
     ClassNode node = classNodes.get(nodeName);
     for(MethodNode m : node.methods)
-      if(hasNone(m.access, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE, Opcodes.ACC_STATIC))
+      if(Util.hasNone(m.access, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE, Opcodes.ACC_STATIC))
         inheritableMethods.get(addTo).add(m.name + m.desc);
     for(String iface : node.interfaces) buildClassHierarchy(iface, addTo);
     buildClassHierarchy(node.superName, addTo);

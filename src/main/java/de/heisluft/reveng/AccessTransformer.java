@@ -17,7 +17,6 @@ import java.util.Set;
 import static de.heisluft.function.FunctionalUtil.*;
 
 //TODO: Document
-//TODO: externalize hasNone and getOrPut to Util (code is shared with remapper, fergie and analyzer)
 public class AccessTransformer implements Util {
 
   private final Map<String, String> classMap = new HashMap<>();
@@ -48,7 +47,7 @@ public class AccessTransformer implements Util {
       if(classMap.containsKey(cn.name)) cn.access = getModifiedAccess(cn.access, classMap.get(cn.name));
       cn.fields.stream().filter(f -> fieldMap.getOrDefault(cn.name, new HashMap<>()).containsKey(f.name)).forEach(f -> f.access = getModifiedAccess(f.access, fieldMap.get(cn.name).get(f.name)));
       cn.methods.forEach(mn -> {
-        if(hasNone(mn.access, Opcodes.ACC_PRIVATE, Opcodes.ACC_STATIC))
+        if(Util.hasNone(mn.access, Opcodes.ACC_PRIVATE, Opcodes.ACC_STATIC))
           inheritable.computeIfAbsent(cn.name, s -> new HashSet<>()).add(mn.name + mn.desc);
       });
     });
@@ -64,20 +63,6 @@ public class AccessTransformer implements Util {
         Files.write(fs.getPath(n.name + ".class"), w.toByteArray());
       }));
     }
-  }
-
-  /**
-   * Returns if a given access modifier has none of the given flags.
-   * For each flag {@code (access & flag) != flag} must hold true
-   *
-   * @param access The value to check
-   * @param flags all flags that must not be present
-   * @return if none of the given flags are present
-   */
-  private static boolean hasNone(int access, int... flags) {
-    for(int flag : flags)
-      if((access & flag) == flag) return false;
-    return true;
   }
 
   private String findModifier(ClassNode cls, String mdName, String mdDesc) {
@@ -112,12 +97,6 @@ public class AccessTransformer implements Util {
       else
         getOrPut(fieldMap, className, new HashMap<>()).put(memberName, access);
     });
-  }
-
-  private static <K, V> V getOrPut(Map<K, V> map, K key, V v) {
-    if(map.containsKey(key)) return map.get(key);
-    map.put(key, v);
-    return v;
   }
 
   public static void main(String[] args) throws IOException {

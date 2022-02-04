@@ -49,40 +49,40 @@ public class GUI implements Util {
       e.printStackTrace();
     }
     nameLookup.values().forEach(classNode -> {
-      if(nameLookup.containsKey(classNode.superName)) getOrPut(hierarchy, classNode.name, ArrayList::new).add(classNode.superName);
-      classNode.interfaces.stream().filter(nameLookup::containsKey).forEach(getOrPut(hierarchy, classNode.name, ArrayList::new)::add);
+      if(nameLookup.containsKey(classNode.superName)) getOrPut(hierarchy, classNode.name, new ArrayList<>()).add(classNode.superName);
+      classNode.interfaces.stream().filter(nameLookup::containsKey).forEach(getOrPut(hierarchy, classNode.name, new ArrayList<>())::add);
       classNode.fields.stream().filter(fieldNode -> fieldNode.desc.contains("L")).forEach(fieldNode -> {
         String cn = fieldNode.desc.substring(fieldNode.desc.startsWith("[") ? fieldNode.desc.lastIndexOf('[') + 2 : 1, fieldNode.desc.length() - 1);
         if (!nameLookup.containsKey(cn)) return;
-        getOrPut(getOrPut(fieldRelations, cn, HashMap::new), classNode.name, ArrayList::new).add(fieldNode.name);
+        getOrPut(getOrPut(fieldRelations, cn, new HashMap<>()), classNode.name, new ArrayList<>()).add(fieldNode.name);
       });
       classNode.methods.forEach(methodNode -> {
-        getOrPut(methodLookup, classNode.name, HashMap::new).put(methodNode.name+methodNode.desc, methodNode);
+        getOrPut(methodLookup, classNode.name, new HashMap<>()).put(methodNode.name+methodNode.desc, methodNode);
         methodNode.instructions.forEach(in -> {
           if (in instanceof TypeInsnNode) {
             String cn = ((TypeInsnNode) in).desc;
             if (nameLookup.containsKey(cn)) {
-              getOrPut(getOrPut(methodRelations, cn, HashMap::new), classNode.name, HashSet::new).add(methodNode.name + methodNode.desc);
+              getOrPut(getOrPut(methodRelations, cn, new HashMap<>()), classNode.name, new HashSet<>()).add(methodNode.name + methodNode.desc);
             }
           }
           if (in instanceof MultiANewArrayInsnNode) {
             String desc = ((MultiANewArrayInsnNode) in).desc;
             String cn = desc.substring(desc.startsWith("[") ? desc.lastIndexOf('[') + 2 : 1, desc.length() - (desc.endsWith(";") ? 1 : 0));
             if (nameLookup.containsKey(cn)) {
-              getOrPut(getOrPut(methodRelations, cn, HashMap::new), classNode.name, HashSet::new).add(methodNode.name + methodNode.desc);
+              getOrPut(getOrPut(methodRelations, cn, new HashMap<>()), classNode.name, new HashSet<>()).add(methodNode.name + methodNode.desc);
             }
           }
           if (in instanceof FieldInsnNode) {
             String desc = ((FieldInsnNode) in).desc;
             String cn = desc.substring(desc.startsWith("[") ? desc.lastIndexOf('[') + 2 : 1, desc.length() - (desc.endsWith(";") ? 1 : 0));
             if (nameLookup.containsKey(cn)) {
-              getOrPut(getOrPut(methodRelations, cn, HashMap::new), classNode.name, HashSet::new).add(methodNode.name + methodNode.desc);
+              getOrPut(getOrPut(methodRelations, cn, new HashMap<>()), classNode.name, new HashSet<>()).add(methodNode.name + methodNode.desc);
             }
           }
           if (in instanceof MethodInsnNode) {
             String cn = ((MethodInsnNode) in).owner;
             if (nameLookup.containsKey(cn)) {
-              getOrPut(getOrPut(methodRelations, cn, HashMap::new), classNode.name, HashSet::new).add(methodNode.name + methodNode.desc);
+              getOrPut(getOrPut(methodRelations, cn, new HashMap<>()), classNode.name, new HashSet<>()).add(methodNode.name + methodNode.desc);
             }
           }
         });
@@ -133,12 +133,5 @@ public class GUI implements Util {
 
   private static Dimension sub(Dimension d, Dimension o) {
     return new Dimension(d.width - o.width, d.height - o.height);
-  }
-
-  private static <K,V> V getOrPut(Map<K,V> map, K key, Supplier<V> value) {
-    if(map.containsKey(key)) return map.get(key);
-    V v = value.get();
-    map.put(key, v);
-    return v;
   }
 }
