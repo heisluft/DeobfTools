@@ -1,5 +1,6 @@
 package de.heisluft.reveng.mappings;
 
+import de.heisluft.function.Tuple2;
 import de.heisluft.reveng.Util;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
@@ -155,7 +156,7 @@ public class Fergie implements Util, MappingsProvider {
         String clsName = line[FRG_ENTITY_CLASS_NAME_INDEX];
         String obfName = line[FRG_ENTITY_NAME_INDEX];
         String obfDesc = line[FRG_METHOD_DESCRIPTOR_INDEX];
-        mappings.methods.computeIfAbsent(clsName, s -> new HashMap<>()).put(obfName + obfDesc, line[FRG_MAPPED_METHOD_NAME_INDEX]);
+        mappings.methods.computeIfAbsent(clsName, s -> new HashMap<>()).put(new Tuple2<>(obfName, obfDesc), line[FRG_MAPPED_METHOD_NAME_INDEX]);
         for(int i = 5; i < line.length; i++)
           mappings.exceptions.computeIfAbsent(clsName + obfName + obfDesc, s -> new ArrayList<>()).add(line[i]);
       } else if("FD:".equals(line[FRG_MAPPING_TYPE_INDEX])) {
@@ -189,7 +190,7 @@ public class Fergie implements Util, MappingsProvider {
     List<String> lines = new ArrayList<>();
     mappings.classes.forEach((k,v) -> lines.add("CL: " + k + " " + v));
     mappings.fields.forEach((clsName, map) -> map.forEach((obfFd, deobfFd) -> lines.add("FD: " + clsName + " " + obfFd + " " + deobfFd)));
-    mappings.methods.forEach((clsName, map) -> map.forEach((obfMet, deobfName) -> lines.add("MD: " + clsName + " " + obfMet.substring(0, obfMet.lastIndexOf('(')) + " " + obfMet.substring(obfMet.lastIndexOf('(')) + " " + deobfName)));
+    mappings.methods.forEach((clsName, map) -> map.forEach((obfMet, deobfName) -> lines.add("MD: " + clsName + " " + obfMet._1 + " " + obfMet._2 +  " " + deobfName)));
     lines.sort(Comparator.naturalOrder());
     Files.write(to, lines);
   }
@@ -261,9 +262,9 @@ public class Fergie implements Util, MappingsProvider {
         cn.methods.forEach(mn -> {
           if((mn.access & Opcodes.ACC_STATIC) == Opcodes.ACC_STATIC) {
             if(!"<clinit>".equals(mn.name) && !(cn.superName.equals(Type.getInternalName(Enum.class)) && genEnumMetDescs(cn.name).anyMatch(s -> s.equals(mn.name + mn.desc))))
-              mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(mn.name + mn.desc, "md_" + methodCounter.getAndIncrement() + "_" + mn.name);
+              mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(new Tuple2<>(mn.name, mn.desc), "md_" + methodCounter.getAndIncrement() + "_" + mn.name);
           } else if(noneContains(mn.name + mn.desc, superMDs, ifaceMDs, OBJECT_MDS))
-            mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(mn.name + mn.desc, mn.name.equals("<init>") ? mn.name : ("md_" + methodCounter.getAndIncrement() + "_" + mn.name));
+            mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(new Tuple2<>(mn.name, mn.desc), mn.name.equals("<init>") ? mn.name : ("md_" + methodCounter.getAndIncrement() + "_" + mn.name));
       });
     });
     return mappings;
