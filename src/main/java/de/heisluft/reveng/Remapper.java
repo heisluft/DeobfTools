@@ -37,6 +37,8 @@ import static de.heisluft.function.FunctionalUtil.thrc;
 //TODO: Come up with an idea on how to restore generic signatures of obfuscated classes with the help of the specialized subclass bridge methods
 //The Ultimate Goal would be a remapper which is smart enough to generate the specialized methods from bridge methods and maybe even inferring checked exceptions.
 public class Remapper implements Util {
+  public static final Remapper INSTANCE = new Remapper(null);
+
   /**All Primitive Names*/
   private static final List<String> PRIMITIVES = Arrays.asList("B", "C", "D", "F", "I", "J", "S", "V", "Z");
 
@@ -56,15 +58,12 @@ public class Remapper implements Util {
   private final Map<String, ClassNode> classNodes = new HashMap<>();
   private final Path inputPath;
 
-  private Remapper(Path inputPath, boolean buildClassTree, List<String> ignorePaths) throws IOException {
+  private Remapper(Path inputPath) {
     this.inputPath = inputPath;
-    if(buildClassTree) try(FileSystem fs = createFS(inputPath)) {
-      Files.walk(fs.getPath("/")).filter(path -> path.toString().endsWith(".class") && ignorePaths.stream().noneMatch(s -> path.toString().startsWith(s))).map(thr(this::parseClass)).forEach(c -> classNodes.put(c.name, c));
-    }
   }
 
   public static void main(String[] args) {
-    if(args.length < 3 || !(args[0].equals("map") || args[0].equals("genReverseMappings") || args[0].equals("remap"))) {
+    if(args.length < 3 || !(args[0].equals("map") || args[0].equals("genReverseMappings") || args[0].equals("remap") || args[0].equals("cleanMappings")|| args[0].equals("genMediatorMappings"))) {
       System.out.println("Heislufts Remapping Service version 1.0\n A deobfuscator and mappings generator\n");
       System.out.println("usage: Remapper <task> <input> <mappings> [options]");
       System.out.println("List of valid tasks: ");
@@ -75,6 +74,11 @@ public class Remapper implements Util {
       System.out.println("  remap:");
       System.out.println("    Remaps the <input> jar with the specified <mappings> file and writes it to [output].");
       System.out.println("    If the outputPath option is not specified, it will default to <input>-deobf.jar");
+      System.out.println("  cleanMappings:");
+      System.out.println("    Writes a clean version of the mappings at <input> to <mapping>");
+      System.out.println("  genMediatorMappings:");
+      System.out.println("    Writes mappings mapping the output of <input> to the output of <mappings>");
+      System.out.println("    to [output]");
       System.out.println("\nAvailable options are:");
       System.out.println("  shorthand         long option                  description");
       System.out.println("  -i pathsToIgnore  --ignorePaths=pathsToIgnore  A List of paths to ignore from the input jar.");
@@ -84,10 +88,10 @@ public class Remapper implements Util {
       System.out.println("                                                 program to exclude all paths starting with either");
       System.out.println("                                                 '/com' or '/org/unwanted/' eg. '/com/i.class',");
       System.out.println("                                                 '/computer.xml', '/org/unwanted/b.gif'. This option");
-      System.out.println("                                                 will be ignored for the 'genReverseMappings' task.");
-      System.out.println("\n  -o outputPath    --outputPath=outputPath       Overrides the path where the remapped");
+      System.out.println("                                                 will be ignored for tasks only operating on mappings");
+      System.out.println("\n  -o outputPath    --outputPath=outputPath     Overrides the path where the remapped");
       System.out.println("                                                 jar will be written to. This option will be ignored");
-      System.out.println("                                                 for tasks other than 'remap'.");
+      System.out.println("                                                 for tasks other than 'remap' and 'genMediatorMappings'.");
       return;
     }
     String action = args[0];
@@ -103,12 +107,12 @@ public class Remapper implements Util {
           continue;
         }
         if((arg.startsWith("--outputPath=") || arg.equals("-o"))) {
-          if(!action.equals("remap") || outPath != null || arg.contains("=") && arg.split("=", 2)[1].isEmpty()) ignoredOpts.add(arg.equals("-o") ? "-o " + args[++i] : arg);
+          if(!(action.equals("remap") || action.equals("genMediatorMappings")) || outPath != null || arg.contains("=") && arg.split("=", 2)[1].isEmpty()) ignoredOpts.add(arg.equals("-o") ? "-o " + args[++i] : arg);
           else outPath = Paths.get(arg.equals("-o") ? args[++i] : arg.split("=", 2)[1]);
           continue;
         }
         if(arg.startsWith("--ignorePaths") || arg.equals("-i")) {
-          if(action.equals("genReverseMappings") || !ignoredPaths.isEmpty() || arg.contains("=") && arg.split("=", 2)[1].isEmpty()) ignoredOpts.add(arg.equals("-i") ? "-i " + args[++i] : arg);
+          if(action.equals("genMediatorMappings") || action.equals("genReverseMappings") || action.equals("cleanMappings") || !ignoredPaths.isEmpty() || arg.contains("=") && arg.split("=", 2)[1].isEmpty()) ignoredOpts.add(arg.equals("-i") ? "-i " + args[++i] : arg);
           else ignoredPaths.addAll(Arrays.asList((arg.equals("-i") ? args[++i] : arg.split("=", 2)[1]).split(";")));
           continue;
         }
@@ -124,11 +128,19 @@ public class Remapper implements Util {
     }
     if(!ignoredOpts.isEmpty()) System.out.println("ignored options: " + ignoredOpts);
     try {
-      Remapper remapper = new Remapper(Paths.get(args[1]), action.equals("remap"), ignoredPaths);
+      Remapper remapper = new Remapper(Paths.get(args[1]));
       Path mappingsPath = Paths.get(args[2]);
       switch(action) {
+        case "cleanMappings":
+          MappingsInterface.writeFergieMappings(MappingsInterface.findProvider(args[1]).parseMappings(Paths.get(args[1])).clean(), mappingsPath);
+          break;
+        case "genMediatorMappings":
+          Mappings from = MappingsInterface.findProvider(args[1]).parseMappings(Paths.get(args[1]));
+          Mappings to = MappingsInterface.findProvider(args[2]).parseMappings(Paths.get(args[2]));
+          MappingsInterface.writeFergieMappings(from.generateMediatorMappings(to), outPath);
+          break;
         case "remap":
-          remapper.remapJar(mappingsPath, outPath);
+          remapper.remapJar(mappingsPath, outPath, ignoredPaths);
           break;
         case "genReverseMappings":
           remapper.buildReverseMappings(mappingsPath);
@@ -217,8 +229,10 @@ public class Remapper implements Util {
     return (access & Opcodes.ACC_SYNTHETIC) == Opcodes.ACC_SYNTHETIC;
   }
 
-  private void remapJar(Path mappingsPath, Path outputPath) throws IOException {
-    Files.write(outputPath, new byte[] {0x50,0x4B,0x05,0x06,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00});
+  private void remapJar(Path mappingsPath, Path outputPath, List<String> ignorePaths) throws IOException {
+    try(FileSystem fs = createFS(inputPath)) {
+      Files.walk(fs.getPath("/")).filter(path -> path.toString().endsWith(".class") && ignorePaths.stream().noneMatch(s -> path.toString().startsWith(s))).map(thr(this::parseClass)).forEach(c -> classNodes.put(c.name, c));
+    }
     Mappings mappings = MappingsInterface.findProvider(mappingsPath.toString()).parseMappings(mappingsPath);
     List<String> anonymousClassCandidates = classNodes.values().stream().filter(
         node -> ((!node.fields.isEmpty() && node.fields.stream().map(f -> f.access).allMatch(
@@ -387,7 +401,7 @@ public class Remapper implements Util {
    * @param descriptor the descriptor to remap
    * @return the remapped descriptor
    */
-  private String remapDescriptor(String descriptor, Mappings mappings) {
+  public String remapDescriptor(String descriptor, Mappings mappings) {
     StringBuilder result = new StringBuilder();
     //Method descriptors start with '('
     if(descriptor.startsWith("(")) {

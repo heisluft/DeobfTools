@@ -1,6 +1,7 @@
 package de.heisluft.reveng.mappings;
 
 import de.heisluft.function.Tuple2;
+import de.heisluft.reveng.Remapper;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -135,5 +136,71 @@ public class Mappings {
    */
   public List<String> getExceptions(String className, String methodName, String methodDescriptor) {
     return exceptions.getOrDefault(className + methodName + methodDescriptor, new ArrayList<>());
+  }
+
+  /**
+   * Cleans up the mappings, removing all entries mapping to themselves
+   *
+   * @return the cleaned up mappings
+   */
+  public Mappings clean() {
+    Mappings mappings = new Mappings();
+    mappings.classes.putAll(Tuple2.streamMap(classes).filter(t -> !t._1.equals(t._2)).collect(Tuple2.toMapCollector()));
+    fields.forEach((className, map) -> {
+      if(Tuple2.streamMap(map).allMatch(t -> t._1.equals(t._2)))return;
+      Map<String, String> values = new HashMap<>();
+      map.forEach((fieldName, remappedFieldName) -> {
+        if(!fieldName.equals(remappedFieldName)) values.put(fieldName, remappedFieldName);
+      });
+      mappings.fields.put(className, values);
+    });
+    methods.forEach((className, map) -> {
+      if(Tuple2.streamMap(map).allMatch(t -> t._1._1.equals(t._2) && !exceptions.containsKey(className + t._1._1 + t._1._2))) return;
+      Map<Tuple2<String, String>, String> values = new HashMap<>();
+      map.forEach((tuple, remappedMethodName) -> {
+        if(!tuple._1.equals(remappedMethodName) || exceptions.containsKey(className + tuple._1 + tuple._2)) values.put(tuple, remappedMethodName);
+      });
+      mappings.methods.put(className, values);
+    });
+    mappings.exceptions.putAll(exceptions);
+    return mappings;
+  }
+
+  /**
+   * Generates Mappings Mediating between these mappings and to.
+   * Consider two Mappings a->b and a->c, the returned mappings represent b->c
+   *
+   * @param to
+   *     the mappings to convert to
+   *
+   * @return the resulting mappings
+   */
+  public Mappings generateMediatorMappings(Mappings to) {
+    Mappings mappings = new Mappings();
+    classes.keySet().forEach(key -> {
+      if(!classes.get(key).equals(to.classes.get(key)))
+      mappings.classes.put(classes.get(key), to.classes.get(key));
+    });
+    fields.keySet().forEach(key -> {
+      if(!to.fields.containsKey(key)) return;
+      Map<String, String> values = new HashMap<>();
+      fields.get(key).forEach((name, renamedFd) -> {
+        String toRenamedFd = to.fields.get(key).get(name);
+        if(!renamedFd.equals(toRenamedFd))
+          values.put(renamedFd, toRenamedFd);
+      });
+      mappings.fields.put(getClassName(key), values);
+    });
+    methods.keySet().forEach(key -> {
+      if(!to.methods.containsKey(key)) return;
+      Map<Tuple2<String, String>, String> values = new HashMap<>();
+      methods.get(key).forEach((tuple2, renamedMd) -> {
+        String toRenamedMd = to.methods.get(key).get(tuple2);
+        if(!renamedMd.equals(toRenamedMd))
+          values.put(tuple2.map1(b -> renamedMd).map2(desc -> Remapper.INSTANCE.remapDescriptor(desc, this)), toRenamedMd);
+      });
+      mappings.methods.put(getClassName(key), values);
+    });
+    return mappings;
   }
 }
