@@ -37,33 +37,22 @@ import static de.heisluft.function.FunctionalUtil.thrc;
 //TODO: Come up with an idea on how to restore generic signatures of obfuscated classes with the help of the specialized subclass bridge methods
 //The Ultimate Goal would be a remapper which is smart enough to generate the specialized methods from bridge methods and maybe even inferring checked exceptions.
 public class Remapper implements Util {
-  public static final Remapper INSTANCE = new Remapper(null);
+  public static final Remapper INSTANCE = new Remapper();
 
   /**All Primitive Names*/
   private static final List<String> PRIMITIVES = Arrays.asList("B", "C", "D", "F", "I", "J", "S", "V", "Z");
-
-  private static final int FRG_MAPPING_TYPE_INDEX = 0;
-  private static final int FRG_ENTITY_CLASS_NAME_INDEX = 1;
-  private static final int FRG_MAPPED_CLASS_NAME_INDEX = 2;
-  private static final int FRG_ENTITY_NAME_INDEX = 2;
-  private static final int FRG_MAPPED_FIELD_NAME_INDEX = 3;
-  private static final int FRG_METHOD_DESCRIPTOR_INDEX = 3;
-  private static final int FRG_MAPPED_METHOD_NAME_INDEX = 4;
   //className -> methodName + methodDesc
   private static final Map<String, Set<String>> INHERITABLE_METHODS = new HashMap<>();
   //className -> fieldName + ":" + fieldDesc
   private static final Map<String, Set<String>> SUBCLASS_ACCESSIBLE_FIELDS = new HashMap<>();
 
-  private final Map<String, String> classMappings = new HashMap<>();
   private final Map<String, ClassNode> classNodes = new HashMap<>();
-  private final Path inputPath;
-
-  private Remapper(Path inputPath) {
-    this.inputPath = inputPath;
-  }
 
   public static void main(String[] args) {
-    if(args.length < 3 || !(args[0].equals("map") || args[0].equals("genReverseMappings") || args[0].equals("remap") || args[0].equals("cleanMappings")|| args[0].equals("genMediatorMappings"))) {
+    if(args.length < 3
+        || !(args[0].equals("map") || args[0].equals("genReverseMappings")
+        || args[0].equals("remap") || args[0].equals("cleanMappings")
+        || args[0].equals("genMediatorMappings") || args[0].equals("genConversionMappings"))) {
       System.out.println("Heislufts Remapping Service version 1.0\n A deobfuscator and mappings generator\n");
       System.out.println("usage: Remapper <task> <input> <mappings> [options]");
       System.out.println("List of valid tasks: ");
@@ -79,6 +68,9 @@ public class Remapper implements Util {
       System.out.println("  genMediatorMappings:");
       System.out.println("    Writes mappings mapping the output of <input> to the output of <mappings>");
       System.out.println("    to [output]");
+      System.out.println("  genConversionMappings:");
+      System.out.println("    Writes mappings mapping the input of <input> to the output of <mappings>");
+      System.out.println("    to [output]");
       System.out.println("\nAvailable options are:");
       System.out.println("  shorthand         long option                  description");
       System.out.println("  -i pathsToIgnore  --ignorePaths=pathsToIgnore  A List of paths to ignore from the input jar.");
@@ -91,7 +83,7 @@ public class Remapper implements Util {
       System.out.println("                                                 will be ignored for tasks only operating on mappings");
       System.out.println("\n  -o outputPath    --outputPath=outputPath     Overrides the path where the remapped");
       System.out.println("                                                 jar will be written to. This option will be ignored");
-      System.out.println("                                                 for tasks other than 'remap' and 'genMediatorMappings'.");
+      System.out.println("                                                 for 'map', 'genReverseMappings' and 'cleanMappings'.");
       return;
     }
     String action = args[0];
@@ -107,12 +99,14 @@ public class Remapper implements Util {
           continue;
         }
         if((arg.startsWith("--outputPath=") || arg.equals("-o"))) {
-          if(!(action.equals("remap") || action.equals("genMediatorMappings")) || outPath != null || arg.contains("=") && arg.split("=", 2)[1].isEmpty()) ignoredOpts.add(arg.equals("-o") ? "-o " + args[++i] : arg);
+          if(!(action.equals("remap") || action.equals("genMediatorMappings") || action.equals("genConversionMappings")) || outPath != null || arg.contains("=") && arg.split("=", 2)[1].isEmpty())
+            ignoredOpts.add(arg.equals("-o") ? "-o " + args[++i] : arg);
           else outPath = Paths.get(arg.equals("-o") ? args[++i] : arg.split("=", 2)[1]);
           continue;
         }
         if(arg.startsWith("--ignorePaths") || arg.equals("-i")) {
-          if(action.equals("genMediatorMappings") || action.equals("genReverseMappings") || action.equals("cleanMappings") || !ignoredPaths.isEmpty() || arg.contains("=") && arg.split("=", 2)[1].isEmpty()) ignoredOpts.add(arg.equals("-i") ? "-i " + args[++i] : arg);
+          if(!(action.equals("remap") || action.equals("map")) || !ignoredPaths.isEmpty() || arg.contains("=") && arg.split("=", 2)[1].isEmpty())
+            ignoredOpts.add(arg.equals("-i") ? "-i " + args[++i] : arg);
           else ignoredPaths.addAll(Arrays.asList((arg.equals("-i") ? args[++i] : arg.split("=", 2)[1]).split(";")));
           continue;
         }
@@ -128,61 +122,35 @@ public class Remapper implements Util {
     }
     if(!ignoredOpts.isEmpty()) System.out.println("ignored options: " + ignoredOpts);
     try {
-      Remapper remapper = new Remapper(Paths.get(args[1]));
+      Path inputPath = Paths.get(args[1]);
       Path mappingsPath = Paths.get(args[2]);
       switch(action) {
         case "cleanMappings":
-          MappingsInterface.writeFergieMappings(MappingsInterface.findProvider(args[1]).parseMappings(Paths.get(args[1])).clean(), mappingsPath);
+          MappingsInterface.writeFergieMappings(MappingsInterface.findProvider(args[1]).parseMappings(inputPath).clean(), mappingsPath);
           break;
         case "genMediatorMappings":
-          Mappings from = MappingsInterface.findProvider(args[1]).parseMappings(Paths.get(args[1]));
-          Mappings to = MappingsInterface.findProvider(args[2]).parseMappings(Paths.get(args[2]));
-          MappingsInterface.writeFergieMappings(from.generateMediatorMappings(to), outPath);
+          Mappings a2b = MappingsInterface.findProvider(args[1]).parseMappings(inputPath);
+          Mappings a2c = MappingsInterface.findProvider(args[2]).parseMappings(mappingsPath);
+          MappingsInterface.writeFergieMappings(a2b.generateMediatorMappings(a2c), outPath);
+          break;
+        case "genConversionMappings":
+          a2b = MappingsInterface.findProvider(args[1]).parseMappings(inputPath);
+          Mappings b2c = MappingsInterface.findProvider(args[2]).parseMappings(mappingsPath);
+          MappingsInterface.writeFergieMappings(a2b.generateConversionMethods(b2c), outPath);
           break;
         case "remap":
-          remapper.remapJar(mappingsPath, outPath, ignoredPaths);
+          new Remapper().remapJar(inputPath, mappingsPath, outPath, ignoredPaths);
           break;
         case "genReverseMappings":
-          remapper.buildReverseMappings(mappingsPath);
+          MappingsInterface.writeFergieMappings(MappingsInterface.findProvider(args[1]).parseMappings(inputPath).generateReverseMappings(), mappingsPath);
           break;
         default:
-          MappingsInterface.writeFergieMappings(MappingsInterface.generateMappings(Paths.get(args[1]), ignoredPaths), mappingsPath);
+          MappingsInterface.writeFergieMappings(MappingsInterface.generateMappings(inputPath, ignoredPaths), mappingsPath);
           break;
       }
     } catch(IOException e) {
       e.printStackTrace();
     }
-  }
-
-  private void buildReverseMappings(Path mappingsPath) throws IOException {
-    Mappings mappings = MappingsInterface.findProvider(mappingsPath.toString()).parseMappings(mappingsPath);
-    List<String> inputLines = Files.readAllLines(inputPath);
-    List<String> revLines = new ArrayList<>(inputLines.size());
-    inputLines.stream().map(line -> line.split(" ")).forEach(line -> {
-      if("MD:".equals(line[FRG_MAPPING_TYPE_INDEX])) {
-        StringBuilder revLine = new StringBuilder( "MD: ");
-        revLine.append(classMappings.get(line[FRG_ENTITY_CLASS_NAME_INDEX]));
-        revLine.append(" ").append(line[FRG_MAPPED_METHOD_NAME_INDEX]);
-        revLine.append(" ").append(remapDescriptor(line[FRG_METHOD_DESCRIPTOR_INDEX], mappings));
-        revLine.append(" ").append(line[FRG_ENTITY_NAME_INDEX]);
-        for(int i = 5; i < line.length; i++) revLine.append(" !").append(
-            classMappings.getOrDefault(line[i], line[i]));
-        revLines.add(revLine.toString());
-      } else if("FD:".equals(line[FRG_MAPPING_TYPE_INDEX])) {
-        revLines.add("FD: " + classMappings.get(line[FRG_ENTITY_CLASS_NAME_INDEX]) + " " + line[FRG_MAPPED_FIELD_NAME_INDEX] + " " +line[FRG_ENTITY_NAME_INDEX]);
-      }
-      else if("CL:".equals(line[FRG_MAPPING_TYPE_INDEX])) {
-        revLines.add("CL: " + line[2] + " " + line[1]);
-        classMappings.put(line[1], line[2]);
-      }
-      else {
-        System.out.print("Not operating on line '");
-        for(int i = 0; i < line.length - 1; i++) System.out.print(line[i] + " ");
-        System.out.print(line[line.length - 1]);
-        System.out.println("'");
-      }
-    });
-    Files.write(mappingsPath, revLines);
   }
 
   private List<String> findMethodExceptions(ClassNode cls, String mdName, String mdDesc, Mappings mappings) {
@@ -229,7 +197,7 @@ public class Remapper implements Util {
     return (access & Opcodes.ACC_SYNTHETIC) == Opcodes.ACC_SYNTHETIC;
   }
 
-  private void remapJar(Path mappingsPath, Path outputPath, List<String> ignorePaths) throws IOException {
+  private void remapJar(Path inputPath, Path mappingsPath, Path outputPath, List<String> ignorePaths) throws IOException {
     try(FileSystem fs = createFS(inputPath)) {
       Files.walk(fs.getPath("/")).filter(path -> path.toString().endsWith(".class") && ignorePaths.stream().noneMatch(s -> path.toString().startsWith(s))).map(thr(this::parseClass)).forEach(c -> classNodes.put(c.name, c));
     }

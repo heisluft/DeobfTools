@@ -139,6 +139,29 @@ public class Mappings {
   }
 
   /**
+   * Generates a reversed set of mappings. consider the mappings a->b, this generates b->a
+   *
+   * @return the reversed (b->a) mappings
+   */
+  public Mappings generateReverseMappings() {
+    Mappings mappings = new Mappings();
+    classes.forEach((name, renamed) -> mappings.classes.put(renamed, name));
+    fields.forEach((className, nameMap) -> {
+      Map<String, String> reversedNames = new HashMap<>();
+      nameMap.forEach((name, renamed) -> reversedNames.put(renamed, name));
+      mappings.fields.put(getClassName(className), reversedNames);
+    });
+    methods.forEach((className, nameMap) -> {
+      Map<Tuple2<String, String>, String> reversedNames = new HashMap<>();
+      nameMap.forEach((nameDescTuple, renamed) ->
+        reversedNames.put(new Tuple2<>(renamed, Remapper.INSTANCE.remapDescriptor(nameDescTuple._2, this)), nameDescTuple._1)
+      );
+      mappings.methods.put(getClassName(className), reversedNames);
+    });
+    return mappings;
+  }
+
+  /**
    * Cleans up the mappings, removing all entries mapping to themselves
    *
    * @return the cleaned up mappings
@@ -167,39 +190,67 @@ public class Mappings {
   }
 
   /**
-   * Generates Mappings Mediating between these mappings and to.
+   * Generates Mappings Mediating between these mappings and other.
    * Consider two Mappings a->b and a->c, the returned mappings represent b->c
    *
-   * @param to
-   *     the mappings to convert to
+   * @param other
+   *     the mappings to convert to (the a->c mappings)
    *
-   * @return the resulting mappings
+   * @return the resulting (b->c) mappings
    */
-  public Mappings generateMediatorMappings(Mappings to) {
+  public Mappings generateMediatorMappings(Mappings other) {
     Mappings mappings = new Mappings();
     classes.keySet().forEach(key -> {
-      if(!classes.get(key).equals(to.classes.get(key)))
-      mappings.classes.put(classes.get(key), to.classes.get(key));
+      if(!classes.get(key).equals(other.classes.get(key)))
+      mappings.classes.put(classes.get(key), other.classes.get(key));
     });
     fields.keySet().forEach(key -> {
-      if(!to.fields.containsKey(key)) return;
+      if(!other.fields.containsKey(key)) return;
       Map<String, String> values = new HashMap<>();
       fields.get(key).forEach((name, renamedFd) -> {
-        String toRenamedFd = to.fields.get(key).get(name);
+        String toRenamedFd = other.fields.get(key).get(name);
         if(!renamedFd.equals(toRenamedFd))
           values.put(renamedFd, toRenamedFd);
       });
       mappings.fields.put(getClassName(key), values);
     });
     methods.keySet().forEach(key -> {
-      if(!to.methods.containsKey(key)) return;
+      if(!other.methods.containsKey(key)) return;
       Map<Tuple2<String, String>, String> values = new HashMap<>();
       methods.get(key).forEach((tuple2, renamedMd) -> {
-        String toRenamedMd = to.methods.get(key).get(tuple2);
+        String toRenamedMd = other.methods.get(key).get(tuple2);
         if(!renamedMd.equals(toRenamedMd))
           values.put(tuple2.map1(b -> renamedMd).map2(desc -> Remapper.INSTANCE.remapDescriptor(desc, this)), toRenamedMd);
       });
       mappings.methods.put(getClassName(key), values);
+    });
+    return mappings;
+  }
+  /**
+   * Generates Mappings Converting between these mappings and other.
+   * Consider two Mappings a->b and b->c, the returned mappings represent a->c
+   *
+   * @param other
+   *     the mappings to convert to (the b->c mappings)
+   *
+   * @return the resulting (a->c) mappings
+   */
+  public Mappings generateConversionMethods(Mappings other) {
+    Mappings mappings = new Mappings();
+    classes.forEach((name, renamed) -> mappings.classes.put(name, other.getClassName(renamed)));
+    fields.forEach((className, nameMap) -> {
+      Map<String, String> otherNameMap = other.fields.getOrDefault(getClassName(className), new HashMap<>());
+      Map<String, String> resultingNames = new HashMap<>();
+      nameMap.forEach((name, renamed) -> resultingNames.put(name, otherNameMap.getOrDefault(renamed, renamed)));
+      mappings.fields.put(className, resultingNames);
+    });
+    methods.forEach((className, nameMap) -> {
+      Map<Tuple2<String, String>, String> otherNameMap = other.methods.getOrDefault(getClassName(className), new HashMap<>());
+      Map<Tuple2<String, String>, String> resultingNames = new HashMap<>();
+      nameMap.forEach((nameDescTuple, renamed) ->
+          resultingNames.put(nameDescTuple, otherNameMap.getOrDefault(new Tuple2<>(renamed, Remapper.INSTANCE.remapDescriptor(nameDescTuple._2, this)), renamed))
+      );
+      mappings.methods.put(className, resultingNames);
     });
     return mappings;
   }
