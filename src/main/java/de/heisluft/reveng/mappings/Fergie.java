@@ -227,7 +227,11 @@ public class Fergie implements Util, MappingsProvider {
     List<String> lines = new ArrayList<>();
     mappings.classes.forEach((k, v) -> lines.add("CL: " + k + " " + v));
     mappings.fields.forEach((clsName, map) -> map.forEach((obfFd, deobfFd) -> lines.add("FD: " + clsName + " " + obfFd + " " + deobfFd)));
-    mappings.methods.forEach((clsName, map) -> map.forEach((obfMet, deobfName) -> lines.add("MD: " + clsName + " " + obfMet._1 + " " + obfMet._2 + " " + deobfName)));
+    mappings.methods.forEach((clsName, map) -> map.forEach((obfMet, deobfName) -> {
+      StringBuilder line = new StringBuilder("MD: " + clsName + " " + obfMet._1 + " " + obfMet._2 + " " + deobfName);
+      mappings.getExceptions(clsName, obfMet._1, obfMet._2).forEach(s -> line.append(" ").append(s));
+      lines.add(line.toString());
+    }));
     lines.sort(Comparator.naturalOrder());
     Files.write(to, lines);
   }
