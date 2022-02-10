@@ -1,6 +1,7 @@
-package de.heisluft.reveng;
+package de.heisluft.reveng.gui;
 
 import de.heisluft.function.Tuple2;
+import de.heisluft.reveng.Util;
 import org.objectweb.asm.tree.*;
 
 import javax.swing.*;
@@ -10,39 +11,60 @@ import java.awt.event.KeyListener;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.List;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
-import java.util.stream.Stream;
 
 import static de.heisluft.function.FunctionalUtil.*;
 
 public class GUI implements Util {
   private JFrame jf;
+  private JFileChooser chooser = new JFileChooser(".");
+
   private final Map<String, ClassNode> nameLookup = new HashMap<>();
   private final Map<String, Map<String, List<String>>> fieldRelations = new HashMap<>();
   private final Map<String, Map<String, Set<String>>> methodRelations = new HashMap<>();
   private final Map<String, Map<String, MethodNode>> methodLookup = new HashMap<>();
   private final Map<String, List<String>> hierarchy = new HashMap<>();
 
-  private GUI() {
+  private GUI() throws UnsupportedLookAndFeelException, ReflectiveOperationException {
+    UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
     jf = new JFrame("GUI Test");
     jf.setSize(1280, 720);
     jf.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
     Dimension d = div(sub(Toolkit.getDefaultToolkit().getScreenSize(), jf.getSize()), 2);
+    initMenuBar();
     jf.setLocation(d.width, d.height);
     jf.addKeyListener(kl(null, Map_of(
         new Tuple2<>(KeyEvent.VK_ESCAPE, e -> jf.dispose()),
         new Tuple2<>(KeyEvent.VK_O, e -> {
-          if (e.isControlDown()) System.out.println("Open Op");
+          if (e.isControlDown()) showOpenDialog();
         })
     ), null));
 
     jf.setVisible(true);
-    try (FileSystem fs = createFS(Paths.get("inf-20100618-deobf.jar"))) {
-      Files.walk(fs.getPath("/")).filter(path -> path.toString().endsWith(".class")).map(thr(this::parseClass)).forEach(cn -> {
+  }
+
+  private void initMenuBar() {
+    JMenuBar jmb = new JMenuBar();
+    JMenu fileJm = new JMenu("File");
+    JMenuItem openJmi = new JMenuItem("Open");
+    openJmi.addActionListener(e -> {
+      showOpenDialog();
+    });
+    fileJm.add(openJmi);
+    jmb.add(fileJm);
+    jf.setJMenuBar(jmb);
+  }
+
+  private void showOpenDialog() {
+    if(chooser.showOpenDialog(jf) == JFileChooser.APPROVE_OPTION) openJarFile(chooser.getSelectedFile().toPath());
+  }
+
+  private void openJarFile(Path path) {
+    try (FileSystem fs = createFS(path)) {
+      Files.walk(fs.getPath("/")).filter(this::hasClassExt).map(thr(this::parseClass)).forEach(cn -> {
         nameLookup.put(cn.name, cn);
       });
     } catch (IOException e) {
@@ -88,14 +110,12 @@ public class GUI implements Util {
         });
       });
     });
-    stream(methodRelations).filter(tuple -> tuple._2.size() < 2).filter(tuple-> stream(tuple._2).allMatch(t -> t._2.size() == 1)).filter(tuple -> !fieldRelations.containsKey(tuple._1)).sorted(Comparator.comparing(o -> o._1)).map(tuple -> tuple.map((s, map) -> s + " -> " + stream(map).map(t -> t.map((s1, strings) -> s1 + "#" + strings.iterator().next())).findFirst().get())).forEach(System.out::println);
+    Tuple2.streamMap(methodRelations).filter(tuple -> tuple._2.size() < 2).filter(tuple-> Tuple2.streamMap(tuple._2).allMatch(t -> t._2.size() == 1)).filter(tuple -> !fieldRelations.containsKey(tuple._1)).sorted(Comparator.comparing(o -> o._1)).map(tuple -> tuple.map((s, map) -> s + " -> " + Tuple2.streamMap(map).map(t -> t.map((s1, strings) -> s1 + "#" + strings.iterator().next())).findFirst().get())).forEach(System.out::println);
+
   }
 
-  private static <T1,T2> Stream<Tuple2<T1, T2>> stream(Map<T1, T2> d) {
-    return d.entrySet().stream().map(Tuple2::new);
-  }
 
-  public static void main(String[] args) {
+  public static void main(String[] args) throws UnsupportedLookAndFeelException, ReflectiveOperationException {
     new GUI();
   }
 
