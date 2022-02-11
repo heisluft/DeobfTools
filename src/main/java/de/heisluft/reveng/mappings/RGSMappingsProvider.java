@@ -22,7 +22,6 @@ import java.util.function.Function;
  * We only parse in the former.
  *
  */
-//TODO: Support dynamic package relocation by subclassing Mappings
 public class RGSMappingsProvider implements MappingsProvider, Util {
 
   /**
@@ -43,9 +42,8 @@ public class RGSMappingsProvider implements MappingsProvider, Util {
   @Override
   public Mappings parseMappings(Path path) throws IOException {
     List<String> lines = Files.readAllLines(path);
-    Map<String, String> classNames = new HashMap<>();
 
-    Mappings mappings = new Mappings();
+    RGSMappings mappings = new RGSMappings();
     List<String> globs = new ArrayList<>();
     for(String line : lines) {
       if(line.startsWith("#") || line.isEmpty()) continue;
@@ -60,7 +58,7 @@ public class RGSMappingsProvider implements MappingsProvider, Util {
         case ".class_map":
           if(words.length < 3)
             throw new IllegalArgumentException("Error on line '" + line + "'. Expected at least 2 arguments, got" + (words.length - 1));
-          classNames.put(words[1], words[2]);
+          mappings.classes.put(words[1], words[2]);
           break;
         case ".field_map":
           if(words.length < 3)
@@ -76,11 +74,11 @@ public class RGSMappingsProvider implements MappingsProvider, Util {
           break;
       }
     }
-    mappings.classes.putAll(classNames); // We would need a subclass for RGSMappings if we were to support package relocation.
+    for(int i = 0; i < globs.size(); i++) {
+      String regex = "^" + globs.get(i).substring(0, globs.get(i).lastIndexOf('*')) + "[^\\/]+$";
+      String newPackage = globs.get(++i).replace("**", "");
+      mappings.packages.put(regex, newPackage);
+    }
     return mappings;
-  }
-
-  public static void main(String[] args) throws IOException{
-    RGSMappingsProvider.INSTANCE.parseMappings(Paths.get(args[0]));
   }
 }
