@@ -189,7 +189,7 @@ public class Remapper implements Util {
 
   private String findFieldMappingRec(ClassNode cls, String fName, String fDesc, Mappings mappings) {
     if(SUBCLASS_ACCESSIBLE_FIELDS.getOrDefault(cls.name, new HashSet<>(0)).contains(fName + ":" + fDesc) && mappings.hasFieldMapping(cls.name, fName)) return mappings.getFieldName(cls.name, fName);
-    if(mappings.hasClassMapping(cls.superName)) return findFieldMappingRec(classNodes.get(cls.superName), fName, fDesc, mappings);
+    if(classNodes.containsKey(cls.superName)) return findFieldMappingRec(classNodes.get(cls.superName), fName, fDesc, mappings);
     return fName;
   }
 
