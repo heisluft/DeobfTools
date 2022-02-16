@@ -7,6 +7,7 @@ import org.objectweb.asm.tree.*;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -35,8 +36,8 @@ public class Analyzer implements Util {
   private final Map<String, Set<String>> tree;
   Set<String> innerClassCandidates = new HashSet<>();
 
-  private Analyzer() throws IOException {
-    try (FileSystem system = createFS(Paths.get("NMSSaveEditor.jar"))) {
+  private Analyzer(Path jarPath) throws IOException {
+    try (FileSystem system = createFS(jarPath)) {
       Files.walk(system.getPath("/")).filter(this::hasClassExt)
           .filter(p -> !p.startsWith("/com/")).map(thr(this::parseClass))
           .map(Tuple2.expandFirst(cn -> cn.name)).forEach(tuple -> tuple.consume(classNodes::put));
@@ -87,7 +88,11 @@ public class Analyzer implements Util {
   }
 
   public static void main(String[] args) throws IOException {
+    if(args.length == 0) {
+      System.err.println("No path provided");
+      System.exit(-1);
+    }
     System.out.println("Class Heuristics for Outer-Inner Relationships - Project CHOIR\n");
-    new Analyzer();
+    new Analyzer(Paths.get(args[0]));
   }
 }
