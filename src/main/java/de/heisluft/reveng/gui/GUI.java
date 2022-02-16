@@ -42,7 +42,6 @@ public class GUI implements Util {
           if (e.isControlDown()) showOpenDialog();
         })
     ), null));
-
     jf.setVisible(true);
   }
 
@@ -111,9 +110,7 @@ public class GUI implements Util {
       });
     });
     Tuple2.streamMap(methodRelations).filter(tuple -> tuple._2.size() < 2).filter(tuple-> Tuple2.streamMap(tuple._2).allMatch(t -> t._2.size() == 1)).filter(tuple -> !fieldRelations.containsKey(tuple._1)).sorted(Comparator.comparing(o -> o._1)).map(tuple -> tuple.map((s, map) -> s + " -> " + Tuple2.streamMap(map).map(t -> t.map((s1, strings) -> s1 + "#" + strings.iterator().next())).findFirst().get())).forEach(System.out::println);
-
   }
-
 
   public static void main(String[] args) throws UnsupportedLookAndFeelException, ReflectiveOperationException {
     new GUI();
