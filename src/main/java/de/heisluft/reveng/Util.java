@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Predicate;
 
 /**
  * This Interface provides convenience methods to its implementors
@@ -147,6 +148,10 @@ public interface Util {
     StringBuilder builder = new StringBuilder(toJoin[0]);
     for(int i = 1; i < toJoin.length; i++) builder.append(" ").append(toJoin[i]);
     return builder.toString();
+  }
+
+  default <T> Predicate<T> not(Predicate<T> inverted) {
+    return inverted.negate();
   }
 
 }
