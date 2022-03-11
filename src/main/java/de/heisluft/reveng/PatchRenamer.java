@@ -77,7 +77,6 @@ public class PatchRenamer implements Util {
             for(Map.Entry<String, String> replacement : replacements.entrySet()) {
               ln = ln.replace(replacement.getKey(), replacement.getValue());
             }
-            System.out.println(ln);
             writer.write(ln + "\n");
           }
         }
