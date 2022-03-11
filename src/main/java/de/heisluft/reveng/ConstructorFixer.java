@@ -22,8 +22,7 @@ import static de.heisluft.function.FunctionalUtil.thrbc;
 import static de.heisluft.function.FunctionalUtil.thrc;
 
 /**
- * The constructor fixer is a tool to make the super() call from inner class threads the first one,
- * easing recompilation.
+ * The constructor fixer is a tool to move empty super() calls to the first position, easing recompilation
  * <p>
  * Generally it should be preferred to just restore the classes status as an inner class, but this
  * is not yet possible
@@ -32,12 +31,13 @@ public class ConstructorFixer implements Util {
   public static void main(String[] args) throws IOException {
     if(args.length != 2) {
       System.out.println("usage: ConstructorFixer <input> <output>");
+      System.exit(1);
     }
     new ConstructorFixer().test(Paths.get(args[0]), Paths.get(args[1]));
   }
 
   /**
-   * Transforms a single class node if it is a string
+   * Transforms a single class node
    *
    * @param bytes
    *     the unmodified classes bytes
@@ -49,9 +49,6 @@ public class ConstructorFixer implements Util {
     ClassNode cn = new ClassNode();
     reader.accept(cn, ClassReader.EXPAND_FRAMES);
 
-    if(!cn.superName.equals("java/lang/Thread")) return bytes;
-    AtomicBoolean dirty = new AtomicBoolean(false);
-
     for(MethodNode m : cn.methods) {
       if(!m.name.equals("<init>")) continue;
       int i;
@@ -60,11 +57,12 @@ public class ConstructorFixer implements Util {
         if(ain instanceof VarInsnNode && ((VarInsnNode) ain).var == 0) {
           if(ain.getNext().getOpcode() == Opcodes.INVOKESPECIAL) {
             MethodInsnNode min = ((MethodInsnNode) ain.getNext());
-            if(min.owner.equals("java/lang/Thread") && min.desc.equals("()V")) break;
+            if(min.owner.equals(cn.superName) && min.desc.equals("()V")) break;
           }
         }
       }
-      if(i == 0) return bytes;
+      if(i == 0 || i == m.instructions.size()) return bytes;
+      System.out.println("Class: " + cn.name + " (extending " + cn.superName + ") Offset: " + i);
       // super call is not first
       AbstractInsnNode aload0 = m.instructions.get(i);
       m.instructions.remove(aload0);
