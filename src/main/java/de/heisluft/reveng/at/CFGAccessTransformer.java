@@ -51,8 +51,10 @@ public class CFGAccessTransformer implements Util, AccessTransformer {
   private static int getModifiedAccess(int access, String command) {
     if("public".equals(command)) return (access & 0xfff8) | Opcodes.ACC_PUBLIC;
     if("protected".equals(command)) return (access & 0xfff8) | Opcodes.ACC_PROTECTED;
+    if("package".equals(command)) return (access & 0xfff8);
     if("public-f".equals(command)) return (access & 0xffe8) | Opcodes.ACC_PUBLIC;
     if("protected-f".equals(command)) return (access & 0xffe8) | Opcodes.ACC_PROTECTED;
+    if("package-f".equals(command)) return (access & 0xffe8);
     return access;
   }
 
@@ -63,6 +65,8 @@ public class CFGAccessTransformer implements Util, AccessTransformer {
    *   <li>public-f: sets the access to public, removing the final modifier if present</li>
    *   <li>protected: sets the access to protected</li>
    *   <li>protected-f: sets the access to protected, removing the final modifier if present</li>
+   *   <li>package: sets the access to package-private</li>
+   *   <li>package-f: sets the access to package-private, removing the final modifier if present</li>
    * </ul>
    *
    * @param command
@@ -71,8 +75,8 @@ public class CFGAccessTransformer implements Util, AccessTransformer {
    * @return true if the given command is valid, false otherwise
    */
   private static boolean isValidCommand(String command) {
-    return "public".equals(command) || "protected".equals(command) || "public-f".equals(command) ||
-        "protected-f".equals(command);
+    return "public".equals(command) || "protected".equals(command) || "package".equals(command) ||
+        "public-f".equals(command) || "protected-f".equals(command) || "package-f".equals(command);
   }
 
   /**
