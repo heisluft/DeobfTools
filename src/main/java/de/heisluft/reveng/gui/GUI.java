@@ -62,10 +62,8 @@ public class GUI implements Util {
   }
 
   private void openJarFile(Path path) {
-    try (FileSystem fs = createFS(path)) {
-      Files.walk(fs.getPath("/")).filter(this::hasClassExt).map(thr(this::parseClass)).forEach(cn -> {
-        nameLookup.put(cn.name, cn);
-      });
+    try {
+      nameLookup.putAll(parseClasses(path));
     } catch (IOException e) {
       e.printStackTrace();
     }

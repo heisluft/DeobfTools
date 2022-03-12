@@ -29,7 +29,6 @@ import java.util.PrimitiveIterator;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static de.heisluft.function.FunctionalUtil.thr;
 import static de.heisluft.function.FunctionalUtil.thrc;
 
 //TODO: Remapping of innerClass field, inferring of inner classes will happen before remapping!
@@ -198,9 +197,7 @@ public class Remapper implements Util {
   }
 
   private void remapJar(Path inputPath, Path mappingsPath, Path outputPath, List<String> ignorePaths) throws IOException {
-    try(FileSystem fs = createFS(inputPath)) {
-      Files.walk(fs.getPath("/")).filter(path -> path.toString().endsWith(".class") && ignorePaths.stream().noneMatch(s -> path.toString().startsWith(s))).map(thr(this::parseClass)).forEach(c -> classNodes.put(c.name, c));
-    }
+    classNodes.putAll(parseClasses(inputPath, ignorePaths));
     Mappings mappings = MappingsInterface.findProvider(mappingsPath.toString()).parseMappings(mappingsPath);
     List<String> anonymousClassCandidates = classNodes.values().stream().filter(
         node -> ((!node.fields.isEmpty() && node.fields.stream().map(f -> f.access).allMatch(

@@ -15,7 +15,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import static de.heisluft.function.FunctionalUtil.thr;
 import static de.heisluft.function.FunctionalUtil.thrc;
 
 /**
@@ -49,9 +48,7 @@ public class ATApplicator implements Util {
    *     if the output jar could not be written or the input file could not be read
    */
   private void transformJar(Path input, Path output) throws IOException {
-    try(FileSystem fs = createFS(input)) {
-      Files.walk(fs.getPath("/")).filter(this::hasClassExt).map(thr(this::parseClass)).forEach(cn -> classes.put(cn.name, cn));
-    }
+    classes.putAll(parseClasses(input));
     classes.values().forEach(cn -> {
       cn.access = at.getClassAccess(cn.name, cn.access);
       cn.fields.forEach(f -> f.access = at.getFieldAccess(cn.name, f.name, f.access));

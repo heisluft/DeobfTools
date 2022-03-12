@@ -5,15 +5,10 @@ import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 
 import java.io.IOException;
-import java.nio.file.FileSystem;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
-
-import static de.heisluft.function.FunctionalUtil.*;
-
 
 // INNER CLASS BONANZA TAKEAWAYS:
 // -> A class references all classes it is enclosed in, both directly and transitive.
@@ -37,11 +32,7 @@ public class Analyzer implements Util {
   Set<String> innerClassCandidates = new HashSet<>();
 
   private Analyzer(Path jarPath) throws IOException {
-    try (FileSystem system = createFS(jarPath)) {
-      Files.walk(system.getPath("/")).filter(this::hasClassExt)
-          .filter(p -> !p.startsWith("/com/")).map(thr(this::parseClass))
-          .map(Tuple2.expandFirst(cn -> cn.name)).forEach(tuple -> tuple.consume(classNodes::put));
-    }
+    classNodes.putAll(parseClasses(jarPath, Collections.singletonList("/com/")));
     tree = new HashMap<>(classNodes.size());
     classNodes.values().stream().filter(cn ->!cn.fields.isEmpty() && cn.fields.stream().map(fieldNode -> fieldNode.access).allMatch(Remapper::isSynthetic)).map(cn -> cn.name).forEach(innerClassCandidates::add);
     Map<String, Set<Tuple2<String, MethodNode>>> references = new HashMap<>();

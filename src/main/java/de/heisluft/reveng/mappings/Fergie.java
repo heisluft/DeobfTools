@@ -11,7 +11,6 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.Serializable;
 import java.lang.reflect.Method;
-import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -26,8 +25,6 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-
-import static de.heisluft.function.FunctionalUtil.thr;
 
 /**
  * Fergie is a mappings parser and generator.
@@ -256,9 +253,7 @@ public class Fergie implements Util, MappingsProvider {
     Mappings mappings = new Mappings();
     if(!Files.isRegularFile(input)) throw new FileNotFoundException(input.toString());
     if(!Files.isReadable(input)) throw new IOException("Cannot read from " + input);
-    try(FileSystem fs = createFS(input)) {
-      Files.walk(fs.getPath("/")).filter(this::hasClassExt).map(thr(this::parseClass)).forEach(c -> classNodes.put(c.name, c));
-    }
+    classNodes.putAll(parseClasses(input));
     Set<String> packages = classNodes.values().stream().filter(p -> p.name.contains("/")).map(p -> p.name.substring(0, p.name.lastIndexOf("/"))).collect(Collectors.toSet());
     classNodes.values().stream().map(n -> n.name).forEach(cn -> {
       String modifiedName = cn;

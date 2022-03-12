@@ -2,7 +2,6 @@ package de.heisluft.reveng;
 
 import de.heisluft.function.Tuple2;
 import de.heisluft.reveng.debug.Stringifier;
-import de.heisluft.reveng.mappings.Mappings;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
@@ -11,14 +10,11 @@ import org.objectweb.asm.tree.MethodNode;
 
 import java.io.IOException;
 import java.lang.reflect.Executable;
-import java.nio.file.FileSystem;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static de.heisluft.function.FunctionalUtil.thr;
 import static org.objectweb.asm.Opcodes.*;
 
 public class Exceptions implements Util {
@@ -32,9 +28,7 @@ public class Exceptions implements Util {
   }
 
   private void analyzeExceptions(Path inJar) throws IOException {
-    try(FileSystem fs = createFS(inJar)) {
-      Files.walk(fs.getPath("/")).filter(this::hasClassExt).map(thr(this::parseClass)).forEach(node -> classNodes.put(node.name, node));
-    }
+    classNodes.putAll(parseClasses(inJar));
     Map<String, String> supers = new HashMap<>();
     classNodes.values().stream().filter(this::isExceptionClass).map(cn -> cn.name).forEach(exClasses::add);
     classNodes.values().stream().filter(this::isRuntimeOrErrorClass).map(cn -> cn.name).forEach(runtimeExesAndErrors::add);

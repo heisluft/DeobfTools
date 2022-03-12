@@ -5,15 +5,16 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.ClassNode;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Predicate;
+
+import static de.heisluft.function.FunctionalUtil.thr;
 
 /**
  * This Interface provides convenience methods to its implementors
@@ -53,6 +54,47 @@ public interface Util {
     map.put("create", "true");
     URI uri = URI.create("jar:file:/" + path.toAbsolutePath().toString().replace('\\', '/'));
     return FileSystems.newFileSystem(uri, map);
+  }
+
+  /**
+   * Parses all class files from a given jar file and groups them by their names.
+   *
+   * @param path
+   *     the path to parse from
+   * @return the resulting map, keys are ClassNode#name, values are the class nodes themselves
+   * @throws IOException if any of the jars classes could not be parsed
+   */
+  default Map<String, ClassNode> parseClasses(Path path) throws IOException {
+    return parseClasses(path, Collections.emptyList());
+  }
+  /**
+   * Parses all class files from a given jar file and groups them by their names, excluding all files whose path start
+   * with any of the strings provided by the list of ignored paths.
+   *
+   * @param path
+   *     the path to parse from
+   * @param ignored
+   *     a list of strings to exclude a class from being parsed if its path starts with any of the given patterns.
+   * @return the resulting map, keys are ClassNode#name, values are the class nodes themselves
+   * @throws IOException if any of the jars classes could not be parsed
+   */
+  default Map<String, ClassNode> parseClasses(Path path, List<String> ignored) throws IOException {
+    Map<String, ClassNode> result = new HashMap<>();
+    try(FileSystem fs = createFS(path)) {
+      Files.walk(fs.getPath("/"))
+          .filter(this::hasClassExt)
+          .filter(p -> ignored.stream().noneMatch(p.toString()::startsWith))
+          .map(p -> {
+            try {
+              return this.parseClass(p);
+            } catch (IOException e) {
+              throw new UncheckedIOException(e);
+            }
+          }).forEach(c -> result.put(c.name, c));
+    } catch (UncheckedIOException e) {
+      throw e.getCause(); // rethrow the lambdas IOException
+    }
+    return result;
   }
 
   /**
