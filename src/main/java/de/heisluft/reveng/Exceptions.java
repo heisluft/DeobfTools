@@ -91,7 +91,6 @@ public class Exceptions implements Util {
     private final Stack<String> stack = new Stack<>();
     private final Map<Integer, String> locals = new HashMap<>(); // I wish this could just be an array, however, visitMaxs is called last...
     private final Map<Label, String> catchBlocks = new HashMap<>();
-    private Label currentLabel = null;
 
     private final Set<String> thrownExTypes = new HashSet<>();
 
@@ -100,21 +99,33 @@ public class Exceptions implements Util {
     private final List<String> caughtExceptions = new ArrayList<>();
     private final Stack<Label> awaited = new Stack<>();
 
+    //mn -> Set<clsName + '#' + mdName + mdDesc>
     private static final Map<MethodNode, Set<String>> calledMethods = new HashMap<>();
+    //clsName + '#' + mdName + mdDesc -> List<clsName>
     private static final Map<String, List<String>> addedExceptions = new HashMap<>();
-    private static Set<String> lastDirty = new HashSet<>(), currentDirty = new HashSet<>();
+    //clsName + '#' + mdName + mdDesc
+    private static Set<String> lastDirty = new HashSet<>();
+    //clsName + '#' + mdName + mdDesc
+    private static Set<String> currentDirty = new HashSet<>();
     private static boolean firstPass = true;
 
     private static final Map<String, Class<?>> classCache = new HashMap<>();
     //clsName + '#' + mdName + mdDesc -> Method
     private static final Map<String, Executable> methodCache = new HashMap<>();
 
-
+    /**
+     *
+     * @param className
+     */
     public ExInferringMV(String className) {
       super(ASM7);
       this.className = className;
     }
 
+    /**
+     *
+     * @param node
+     */
     public void accept(MethodNode node) {
       if(addedExceptions.containsKey(className + "#" + node.name + node.desc)) return;
       if(!firstPass && (!calledMethods.containsKey(node) || calledMethods.get(node).stream().noneMatch(lastDirty::contains))) return;
@@ -371,7 +382,6 @@ public class Exceptions implements Util {
     }
 
     public void visitEnd() {
-      currentLabel = null;
       stack.clear();
       locals.clear();
       List<String> effExTypes = new ArrayList<>();
@@ -431,7 +441,6 @@ public class Exceptions implements Util {
         awaited.push(endInfo._1);
         caughtExceptions.addAll(endInfo._2);
       }
-      currentLabel = label;
       if(catchBlocks.containsKey(label)) stack.push(desc(catchBlocks.get(label)));
       super.visitLabel(label);
     }
@@ -442,9 +451,14 @@ public class Exceptions implements Util {
       super.visitVarInsn(opcode, var);
     }
 
+    /**
+     *
+     * @param type
+     * @return
+     */
     static String desc(String type) {
       if(type == null) return "null";
-      if(type.startsWith("[")) return type;
+      if(type.startsWith("[") || type.endsWith(";")) return type;
       switch(type) {
         case "Z":
         case "C":
@@ -459,17 +473,26 @@ public class Exceptions implements Util {
       return "L" + type + ";";
     }
 
+    /**
+     *
+     * @param exDesc
+     * @param caughtExceptions
+     * @return
+     */
     private boolean isSignificant(String exDesc, List<String> caughtExceptions) {
       if(exDesc.equals("null")) return false;
       String exType = exDesc.substring(1, exDesc.length() - 1);
-      if(caughtExceptions.stream().anyMatch(ex-> {
+      if(caughtExceptions.stream().filter(Objects::nonNull).anyMatch(ex-> {
         if(exType.equals(ex)) return false;
         String s = exType;
         while (classNodes.containsKey(s)) {
           s = classNodes.get(s).superName;
           if(s.equals(ex)) return true;
         }
-        return false;
+        Class<?> jExType = resolveClass(s);
+        if(jExType == null) return false;
+        Class<?> caughtExType = resolveClass(ex);
+        return caughtExType != null && caughtExType.isAssignableFrom(jExType);
       })) return false;
       if(Exceptions.exClasses.contains(exType)) return true;
       if(Exceptions.runtimeExesAndErrors.contains(exType)) return false;
@@ -484,16 +507,11 @@ public class Exceptions implements Util {
       return true;
     }
 
-    private String stackToString() {
-      String s = stack.toString();
-      return "stack: { " + s.substring(1, s.length() - 1) + " }";
-    }
-
-    private String localsToString() {
-      return "locals: " +
-          Tuple2.streamMap(locals).sorted(Comparator.comparing(Tuple2::_1)).map(Tuple2::_2).collect(Collectors.joining(", ", "{ ", " }"));
-    }
-
+    /**
+     *
+     * @param desc
+     * @return
+     */
     static Class<?> resolveClass(String desc) {
       //Class.forName is weird, so we need to transform reference types
       String clsName = (desc.startsWith("L") && desc.endsWith(";") ? desc.substring(1, desc.length() - 1) : desc).replace('/', '.');
@@ -506,6 +524,14 @@ public class Exceptions implements Util {
       }
     }
 
+    /**
+     *
+     * @param c
+     * @param name
+     * @param desc
+     * @param argTypes
+     * @return
+     */
     private static Executable resolveMethod(Class<?> c, String name, String desc, Type[] argTypes) {
       if(methodCache.containsKey(c + "#" + name + desc)) return methodCache.get(c + "#" + name + desc);
       Class<?>[] jArgTypes = Arrays.stream(argTypes).map(Type::getDescriptor).map(ExInferringMV::resolveClass).toArray(Class<?>[]::new);
