@@ -10,6 +10,7 @@ import org.objectweb.asm.tree.MethodNode;
 
 import java.io.IOException;
 import java.lang.reflect.Executable;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
@@ -24,16 +25,36 @@ public class Exceptions implements Util {
   private static final List<String> runtimeExesAndErrors = new ArrayList<>();
 
   public static void main(String[] args) throws IOException {
-    new Exceptions().analyzeExceptions(Paths.get("c0.0.23a_01-deobf.jar"));
+    if(args.length < 2) {
+      System.out.println("usage: Exceptions <inJar> <outFrg>");
+      return;
+    }
+    new Exceptions().analyzeExceptions(Paths.get(args[0]), Paths.get(args[1]));
   }
 
-  private void analyzeExceptions(Path inJar) throws IOException {
+  private void analyzeExceptions(Path inJar, Path outFrg) throws IOException {
     classNodes.putAll(parseClasses(inJar));
-    Map<String, String> supers = new HashMap<>();
+    List<String> frgLines = new ArrayList<>();
     classNodes.values().stream().filter(this::isExceptionClass).map(cn -> cn.name).forEach(exClasses::add);
     classNodes.values().stream().filter(this::isRuntimeOrErrorClass).map(cn -> cn.name).forEach(runtimeExesAndErrors::add);
-    System.out.println(exClasses);
     classNodes.values().forEach(cn -> cn.methods.forEach(new ExInferringMV(cn.name)::accept));
+    if(ExInferringMV.currentDirty.isEmpty()) return;
+    ExInferringMV.firstPass = false;
+    while (!ExInferringMV.currentDirty.isEmpty()) {
+      ExInferringMV.lastDirty = ExInferringMV.currentDirty;
+      ExInferringMV.currentDirty = new HashSet<>();
+      classNodes.values().forEach(cn -> cn.methods.forEach(new ExInferringMV(cn.name)::accept));
+    }
+    ExInferringMV.addedExceptions.forEach((s, strings) -> {
+      int hashPos = s.indexOf('#');
+      String cname = s.substring(0, hashPos);
+      String[] split = s.substring(hashPos + 1).split("\\(");
+      StringBuilder lineBuilder = new StringBuilder("MD: " + cname + " " + split[0] + " (" + split[1] + " " + split[0] + " ");
+      for (String ex : strings) lineBuilder.append(ex).append(" ");
+      frgLines.add(lineBuilder.deleteCharAt(lineBuilder.length()-1).toString());
+    });
+    frgLines.sort(String::compareTo);
+    Files.write(outFrg, frgLines);
   }
 
 
@@ -67,8 +88,6 @@ public class Exceptions implements Util {
     private final String className;
     private MethodNode node;
 
-    private static final boolean DEBUG = false;
-
     private final Stack<String> stack = new Stack<>();
     private final Map<Integer, String> locals = new HashMap<>(); // I wish this could just be an array, however, visitMaxs is called last...
     private final Map<Label, String> catchBlocks = new HashMap<>();
@@ -81,7 +100,11 @@ public class Exceptions implements Util {
     private final List<String> caughtExceptions = new ArrayList<>();
     private final Stack<Label> awaited = new Stack<>();
 
-    private static final Map<MethodNode, Map<String, Set<String>>> calledMethods = new HashMap<>();
+    private static final Map<MethodNode, Set<String>> calledMethods = new HashMap<>();
+    private static final Map<String, List<String>> addedExceptions = new HashMap<>();
+    private static Set<String> lastDirty = new HashSet<>(), currentDirty = new HashSet<>();
+    private static boolean firstPass = true;
+
     private static final Map<String, Class<?>> classCache = new HashMap<>();
     //clsName + '#' + mdName + mdDesc -> Method
     private static final Map<String, Executable> methodCache = new HashMap<>();
@@ -93,8 +116,9 @@ public class Exceptions implements Util {
     }
 
     public void accept(MethodNode node) {
+      if(addedExceptions.containsKey(className + "#" + node.name + node.desc)) return;
+      if(!firstPass && (!calledMethods.containsKey(node) || calledMethods.get(node).stream().noneMatch(lastDirty::contains))) return;
       this.node = node;
-      System.out.println("Analyzing " + className + "#" + node.name + node.desc);
       Type[] argTypes = Type.getArgumentTypes(node.desc);
       boolean isInstance = (node.access & ACC_STATIC) == 0;
       if(isInstance) locals.put(0, "L" + className + ";");
@@ -105,9 +129,6 @@ public class Exceptions implements Util {
     }
 
     public void visitTryCatchBlock(Label start, Label end, Label handler, String type) {
-      if(DEBUG) System.out.println(
-          "TryCatch(start: " + start + ", end: " + end + ", handler: " + handler + ", exType: " +
-              type);
       getOrPut(tryBlocks, start, new Tuple2<>(end, new ArrayList<>()))._2.add(type);
       getOrPut(tryEnds, end, new ArrayList<>()).add(type);
       catchBlocks.put(handler, type);
@@ -115,10 +136,6 @@ public class Exceptions implements Util {
     }
 
     public void visitInsn(int opcode) {
-      if(DEBUG) {
-        if(currentLabel != null) System.out.print("  ");
-        System.out.println(Stringifier.stringifyInsnOp(opcode));
-      }
       if(opcode >= ICONST_M1 && opcode <= ICONST_5) stack.push("I");
       if(opcode == LCONST_0 || opcode == LCONST_1) stack.push("J");
       if(opcode == ACONST_NULL) stack.push("null");
@@ -261,18 +278,10 @@ public class Exceptions implements Util {
         String exType = stack.peek();
         if(exType != null && isSignificant(exType, caughtExceptions)) thrownExTypes.add(Type.getType(exType).getInternalName());
       }
-      if(DEBUG) {
-        if(currentLabel != null) System.out.print("  ");
-        System.out.println(stackToString() + ", " + localsToString());
-      }
       super.visitInsn(opcode);
     }
 
     public void visitIntInsn(int opcode, int operand) {
-      if(DEBUG) {
-        if(currentLabel != null) System.out.print("  ");
-        System.out.println(Stringifier.stringifyInsnOp(opcode) + " " + operand);
-      }
       if(opcode == BIPUSH || opcode == SIPUSH) stack.push("I");
       if(opcode == NEWARRAY) {
         stack.pop();
@@ -303,18 +312,10 @@ public class Exceptions implements Util {
             break;
         }
       }
-      if(DEBUG) {
-        if(currentLabel != null) System.out.print("  ");
-        System.out.println(stackToString() + ", " + localsToString());
-      }
       super.visitIntInsn(opcode, operand);
     }
 
     public void visitTypeInsn(int opcode, String type) {
-      if(DEBUG) {
-        if(currentLabel != null) System.out.print("  ");
-        System.out.println(Stringifier.stringifyInsnOp(opcode) + " " + type);
-      }
       if(opcode == CHECKCAST) {
         stack.pop();
         stack.push(desc(type));
@@ -328,19 +329,10 @@ public class Exceptions implements Util {
         stack.push("I");
       }
       if(opcode == NEW) stack.push(desc(type));
-      if(DEBUG) {
-        if(currentLabel != null) System.out.print("  ");
-        System.out.println(stackToString() + ", " + localsToString());
-      }
       super.visitTypeInsn(opcode, type);
     }
 
     public void visitFieldInsn(int opcode, String owner, String name, String descriptor) {
-      if(DEBUG) {
-        if(currentLabel != null) System.out.print("  ");
-        System.out.println(
-            Stringifier.stringifyInsnOp(opcode) + " " + owner + "#" + name + " " + descriptor);
-      }
       if(opcode == GETSTATIC) stack.push(descriptor);
       if(opcode == PUTSTATIC) stack.pop();
       if(opcode == GETFIELD) {
@@ -351,77 +343,60 @@ public class Exceptions implements Util {
         stack.pop();
         stack.pop();
       }
-      if(DEBUG) {
-        if(currentLabel != null) System.out.print("  ");
-        System.out.println(stackToString() + ", " + localsToString());
-      }
       super.visitFieldInsn(opcode, owner, name, descriptor);
     }
 
     public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
-      if(!(owner.equals(className) && name.equals(node.name) && descriptor.equals(node.desc))) getOrPut(getOrPut(calledMethods, node, new HashMap<>()), owner, new HashSet<>()).add(name + descriptor);
-      if(DEBUG) {
-        if(currentLabel != null) System.out.print("  ");
-        System.out.println(Stringifier.stringifyInsnOp(opcode) + " " + owner + "#" + name + descriptor);
-      }
+      String key = owner + "#" + name + descriptor;
+      if(!(owner.equals(className) && name.equals(node.name) && descriptor.equals(node.desc))) getOrPut(calledMethods, node, new HashSet<>()).add(key);
       Type[] argTypes = Type.getArgumentTypes(descriptor);
       for(int i = 0; i < argTypes.length; i++) stack.pop();
       if(opcode != INVOKESTATIC) stack.pop();
       if(!descriptor.endsWith(")V")) stack.push(descriptor.substring(descriptor.lastIndexOf(')') + 1));
-      Class<?> ownerCls = resolveClass(desc(owner));
-      if(ownerCls != null) {
-        Executable ex = resolveMethod(ownerCls, name, descriptor, argTypes);
-        if(ex != null) {
-          Class<?>[] exTypes = ex.getExceptionTypes();
-          for(Class<?> exType : exTypes) {
-            if(isSignificant(Type.getDescriptor(exType), caughtExceptions)) thrownExTypes.add(Type.getInternalName(exType));
-          }
+      if(addedExceptions.containsKey(key)) {
+        addedExceptions.get(key).stream().filter(ex -> isSignificant(desc(ex), caughtExceptions)).forEach(thrownExTypes::add);
+      } else {
+        Class<?> ownerCls = resolveClass(desc(owner));
+        if(ownerCls != null) {
+         Executable ex = resolveMethod(ownerCls, name, descriptor, argTypes);
+          if(ex != null) {
+            Class<?>[] exTypes = ex.getExceptionTypes();
+            for(Class<?> exType : exTypes) {
+              if(isSignificant(Type.getDescriptor(exType), caughtExceptions)) thrownExTypes.add(Type.getInternalName(exType));
+           }
+         }
         }
-      }
-      if(DEBUG) {
-        if(currentLabel != null) System.out.print("  ");
-        System.out.println(stackToString() + ", " + localsToString());
       }
       super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
     }
 
     public void visitEnd() {
-      if(DEBUG && currentLabel != null) System.out.println("}");
       currentLabel = null;
       stack.clear();
       locals.clear();
       List<String> effExTypes = new ArrayList<>();
       for(String exType : thrownExTypes) {
-        if(isSignificant(exType, thrownExTypes.stream().filter(not(exType::equals)).collect(Collectors.toList())))
+        if(isSignificant(desc(exType), thrownExTypes.stream().filter(not(exType::equals)).collect(Collectors.toList())))
           effExTypes.add(exType);
       }
       thrownExTypes.clear();
-      if(!effExTypes.isEmpty()) System.out.println("throws " + effExTypes);
-      System.out.println();
+      if(!effExTypes.isEmpty()) {
+        String key = className + "#" + node.name + node.desc;
+        addedExceptions.put(key, effExTypes);
+        currentDirty.add(key);
+      }
       super.visitEnd();
     }
 
     public void visitJumpInsn(int opcode, Label label) {
-      if(DEBUG) {
-        if(currentLabel != null) System.out.print("  ");
-        System.out.println(Stringifier.stringifyInsnOp(opcode) + " " + label);
-      }
       if(GOTO != opcode && JSR != opcode) {
         stack.pop();
         if(IFNULL != opcode && IFNONNULL != opcode && (opcode < IFEQ || opcode > IFLE)) stack.pop();
-      }
-      if(DEBUG) {
-        if(currentLabel != null) System.out.print("  ");
-        System.out.println(stackToString() + ", " + localsToString());
       }
       super.visitJumpInsn(opcode, label);
     }
 
     public void visitLdcInsn(Object value) {
-      if(DEBUG) {
-        if(currentLabel != null) System.out.print("  ");
-        System.out.println("LDC " + value + " (" + Type.getDescriptor(value.getClass()) + ")");
-      }
       if(value instanceof Integer) {
         stack.push("I");
       } else if(value instanceof Float) {
@@ -438,29 +413,16 @@ public class Exceptions implements Util {
         throw new RuntimeException("This should not happen");
       }
 
-      if(DEBUG) {
-        if(currentLabel != null) System.out.print("  ");
-        System.out.println(stackToString() + ", " + localsToString());
-      }
       super.visitLdcInsn(value);
     }
 
     public void visitMultiANewArrayInsn(String descriptor, int numDimensions) {
-      if(DEBUG) {
-        if(currentLabel != null) System.out.print("  ");
-        System.out.println("MULTIANEWARRAY " + descriptor + ", dim " + numDimensions);
-      }
       for(int i = 0; i < numDimensions; i++) stack.pop();
       stack.push(descriptor);
-      if(DEBUG) {
-        if(currentLabel != null) System.out.print("  ");
-        System.out.println(stackToString() + ", " + localsToString());
-      }
       super.visitMultiANewArrayInsn(descriptor, numDimensions);
     }
 
     public void visitLabel(Label label) {
-      if(DEBUG && currentLabel != null) System.out.println("}");
       if(!awaited.empty() && label.equals(awaited.peek())) {
         caughtExceptions.removeAll(tryEnds.get(awaited.pop()));
       }
@@ -469,23 +431,14 @@ public class Exceptions implements Util {
         awaited.push(endInfo._1);
         caughtExceptions.addAll(endInfo._2);
       }
-      if(DEBUG) System.out.println(label + ": {");
       currentLabel = label;
       if(catchBlocks.containsKey(label)) stack.push(desc(catchBlocks.get(label)));
       super.visitLabel(label);
     }
 
     public void visitVarInsn(int opcode, int var) {
-      if(DEBUG) {
-        if(currentLabel != null) System.out.print("  ");
-        System.out.println(Stringifier.stringifyInsnOp(opcode) + " " + var);
-      }
       if(opcode >= ILOAD && opcode <= ALOAD) stack.push(locals.get(var));
       if(opcode >= ISTORE && opcode <= ASTORE) locals.put(var, stack.pop());
-      if(DEBUG) {
-        if(currentLabel != null) System.out.print("  ");
-        System.out.println(stackToString() + ", " + localsToString());
-      }
       super.visitVarInsn(opcode, var);
     }
 
@@ -506,9 +459,18 @@ public class Exceptions implements Util {
       return "L" + type + ";";
     }
 
-    private boolean isSignificant(String exType, List<String> caughtExceptions) {
-      if(exType.equals("null")) return false;
-      if(caughtExceptions.stream().map(ExInferringMV::desc).anyMatch(exType::equals)) return false;
+    private boolean isSignificant(String exDesc, List<String> caughtExceptions) {
+      if(exDesc.equals("null")) return false;
+      String exType = exDesc.substring(1, exDesc.length() - 1);
+      if(caughtExceptions.stream().anyMatch(ex-> {
+        if(exType.equals(ex)) return false;
+        String s = exType;
+        while (classNodes.containsKey(s)) {
+          s = classNodes.get(s).superName;
+          if(s.equals(ex)) return true;
+        }
+        return false;
+      })) return false;
       if(Exceptions.exClasses.contains(exType)) return true;
       if(Exceptions.runtimeExesAndErrors.contains(exType)) return false;
       Class<?> jExType = resolveClass(exType);
