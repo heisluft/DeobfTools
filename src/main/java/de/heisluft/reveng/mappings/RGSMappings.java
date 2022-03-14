@@ -16,7 +16,7 @@ final class RGSMappings extends Mappings {
   public String getClassName(String className) {
     for(Map.Entry<String, String> relocation : packages.entrySet()) {
       String cNameOnly = className.contains("/") ? className.substring(className.lastIndexOf('/') + 1) : className;
-      if(className.matches(relocation.getKey())) return relocation.getValue() + cNameOnly;
+      if(className.matches(relocation.getKey())) return relocation.getValue() + super.getClassName(cNameOnly);
     }
     return super.getClassName(className);
   }
