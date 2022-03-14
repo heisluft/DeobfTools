@@ -1,6 +1,7 @@
 package de.heisluft.reveng.mappings;
 
 import de.heisluft.function.Tuple2;
+import de.heisluft.reveng.ExceptionMapper;
 import de.heisluft.reveng.Util;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
@@ -310,6 +311,7 @@ public class Fergie implements Util, MappingsProvider {
               mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(new Tuple2<>(mn.name, mn.desc), mn.name.equals("<init>") ? mn.name : ("md_" + methodCounter.getAndIncrement() + "_" + mn.name));
           });
         });
+    mappings.exceptions.putAll(new ExceptionMapper().analyzeExceptions(input));
     return mappings;
   }
 
