@@ -307,8 +307,8 @@ public class Fergie implements Util, MappingsProvider {
             if((mn.access & Opcodes.ACC_STATIC) == Opcodes.ACC_STATIC) {
               if(!"<clinit>".equals(mn.name) && !(cn.superName.equals(Type.getInternalName(Enum.class)) && genEnumMetDescs(cn.name).anyMatch(s -> s.equals(mn.name + mn.desc))))
                 mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(new Tuple2<>(mn.name, mn.desc), "md_" + methodCounter.getAndIncrement() + "_" + mn.name);
-            } else if(noneContains(mn.name + mn.desc, superMDs, ifaceMDs, OBJECT_MDS))
-              mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(new Tuple2<>(mn.name, mn.desc), mn.name.equals("<init>") ? mn.name : ("md_" + methodCounter.getAndIncrement() + "_" + mn.name));
+            } else if(!"<init>".equals(mn.name) && noneContains(mn.name + mn.desc, superMDs, ifaceMDs, OBJECT_MDS))
+              mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(new Tuple2<>(mn.name, mn.desc), "md_" + methodCounter.getAndIncrement() + "_" + mn.name);
           });
         });
     mappings.exceptions.putAll(new ExceptionMapper().analyzeExceptions(input));
