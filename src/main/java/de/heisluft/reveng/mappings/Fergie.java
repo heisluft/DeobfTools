@@ -286,6 +286,9 @@ public class Fergie implements Util, MappingsProvider {
       if(ignored.stream().noneMatch(modifiedName::startsWith))
         mappings.classes.put(cn, modifiedName);
     });
+
+    mappings.exceptions.putAll(new ExceptionMapper().analyzeExceptions(input));
+
     AtomicInteger fieldCounter = new AtomicInteger(1);
     AtomicInteger methodCounter = new AtomicInteger(1);
     classNodes.values().stream().filter(c -> ignored.stream().noneMatch(c.name::startsWith))
@@ -307,11 +310,14 @@ public class Fergie implements Util, MappingsProvider {
             if((mn.access & Opcodes.ACC_STATIC) == Opcodes.ACC_STATIC) {
               if(!"<clinit>".equals(mn.name) && !(cn.superName.equals(Type.getInternalName(Enum.class)) && genEnumMetDescs(cn.name).anyMatch(s -> s.equals(mn.name + mn.desc))))
                 mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(new Tuple2<>(mn.name, mn.desc), "md_" + methodCounter.getAndIncrement() + "_" + mn.name);
-            } else if(!"<init>".equals(mn.name) && noneContains(mn.name + mn.desc, superMDs, ifaceMDs, OBJECT_MDS))
+            } else if(noneContains(mn.name + mn.desc, superMDs, ifaceMDs, OBJECT_MDS))
+              if("<init>".equals(mn.name)) {
+                if(!mappings.exceptions.containsKey(cn.name + mn.name + mn.desc)) return;
+                mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(new Tuple2<>(mn.name, mn.desc), mn.name);
+            } else
               mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(new Tuple2<>(mn.name, mn.desc), "md_" + methodCounter.getAndIncrement() + "_" + mn.name);
           });
         });
-    mappings.exceptions.putAll(new ExceptionMapper().analyzeExceptions(input));
     return mappings;
   }
 
