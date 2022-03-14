@@ -1,7 +1,6 @@
-package de.heisluft.reveng.mappings;
+package de.heisluft.reveng;
 
 import de.heisluft.function.Tuple2;
-import de.heisluft.reveng.Util;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
