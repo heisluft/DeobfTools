@@ -50,7 +50,7 @@ public class SrcLevelRemapper implements Util {
    * @throws IOException
    *     if the mappings file could not be read
    */
-  SrcLevelRemapper(Path mappingsPath) throws IOException {
+  private SrcLevelRemapper(Path mappingsPath) throws IOException {
     List<String> lines = Files.readAllLines(mappingsPath);
     lines.forEach(line -> {
       String[] words = line.split(" ");
@@ -69,7 +69,7 @@ public class SrcLevelRemapper implements Util {
    *
    * @throws IOException if the source file could not be read or the remapped source file could not be written
    */
-  void remapSingleFile(Path inputPath, Path outputPath) throws IOException {
+  private void remapSingleFile(Path inputPath, Path outputPath) throws IOException {
     try(BufferedReader reader = new BufferedReader(
         new InputStreamReader(Files.newInputStream(inputPath)))) {
       try(BufferedWriter writer = new BufferedWriter(
@@ -89,15 +89,17 @@ public class SrcLevelRemapper implements Util {
    *
    * @param inDirectory
    *     the directory in which the frg-mapped source-files reside
-   * @param outPatchDir
+   * @param outDirectory
    *     the directory to write the remapped source files to
    *
    * @throws IOException
    *     if any source files could not be read or any remapped source file could not be written
    */
-  private void remapAllFiles(Path inDirectory, Path outPatchDir) throws IOException {
-    Files.walk(inDirectory, 1).filter(Files::isRegularFile).forEach(thrc(p -> {
-      remapSingleFile(p, outPatchDir.resolve(inDirectory.relativize(p)));
+  private void remapAllFiles(Path inDirectory, Path outDirectory) throws IOException {
+    Files.walk(inDirectory).filter(Files::isRegularFile).forEach(thrc(p -> {
+      Path target = outDirectory.resolve(inDirectory.relativize(p));
+      Files.createDirectories(target.getParent());
+      remapSingleFile(p, target);
     }));
   }
 }
