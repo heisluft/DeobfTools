@@ -100,13 +100,14 @@ public class ATGenerator implements Util {
         });
       });
     } while (dirty.get());
-      try (OutputStream out = Files.newOutputStream(atPath);
-           BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8))) {
-        for (String line : lines) {
-          writer.write(line);
-          writer.write('\n');
-        }
+    if(lines.isEmpty()) return;
+    try (OutputStream out = Files.newOutputStream(atPath);
+         BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8))) {
+      for (String line : lines) {
+        writer.write(line);
+        writer.write('\n');
       }
+    }
   }
 
   public static void main(String[] args) throws IOException {

@@ -1,7 +1,7 @@
-package de.heisluft.reveng;
+package de.heisluft.reveng.mappings;
 
 import de.heisluft.function.Tuple2;
-import de.heisluft.reveng.debug.Stringifier;
+import de.heisluft.reveng.Util;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
@@ -10,51 +10,31 @@ import org.objectweb.asm.tree.MethodNode;
 
 import java.io.IOException;
 import java.lang.reflect.Executable;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
 
 import static org.objectweb.asm.Opcodes.*;
 
-public class Exceptions implements Util {
+public class ExceptionMapper implements Util {
 
   private static final Map<String, ClassNode> classNodes = new HashMap<>();
   private static final List<String> exClasses = new ArrayList<>();
   private static final List<String> runtimeExesAndErrors = new ArrayList<>();
 
-  public static void main(String[] args) throws IOException {
-    if(args.length < 2) {
-      System.out.println("usage: Exceptions <inJar> <outFrg>");
-      return;
-    }
-    new Exceptions().analyzeExceptions(Paths.get(args[0]), Paths.get(args[1]));
-  }
-
-  private void analyzeExceptions(Path inJar, Path outFrg) throws IOException {
+  public Map<String, List<String>> analyzeExceptions(Path inJar) throws IOException {
     classNodes.putAll(parseClasses(inJar));
-    List<String> frgLines = new ArrayList<>();
     classNodes.values().stream().filter(this::isExceptionClass).map(cn -> cn.name).forEach(exClasses::add);
     classNodes.values().stream().filter(this::isRuntimeOrErrorClass).map(cn -> cn.name).forEach(runtimeExesAndErrors::add);
     classNodes.values().forEach(cn -> cn.methods.forEach(new ExInferringMV(cn.name)::accept));
-    if(ExInferringMV.currentDirty.isEmpty()) return;
+    if(ExInferringMV.currentDirty.isEmpty()) return new HashMap<>();
     ExInferringMV.firstPass = false;
     while (!ExInferringMV.currentDirty.isEmpty()) {
       ExInferringMV.lastDirty = ExInferringMV.currentDirty;
       ExInferringMV.currentDirty = new HashSet<>();
       classNodes.values().forEach(cn -> cn.methods.forEach(new ExInferringMV(cn.name)::accept));
     }
-    ExInferringMV.addedExceptions.forEach((s, strings) -> {
-      int hashPos = s.indexOf('#');
-      String cname = s.substring(0, hashPos);
-      String[] split = s.substring(hashPos + 1).split("\\(");
-      StringBuilder lineBuilder = new StringBuilder("MD: " + cname + " " + split[0] + " (" + split[1] + " " + split[0] + " ");
-      for (String ex : strings) lineBuilder.append(ex).append(" ");
-      frgLines.add(lineBuilder.deleteCharAt(lineBuilder.length()-1).toString());
-    });
-    frgLines.sort(String::compareTo);
-    Files.write(outFrg, frgLines);
+    return ExInferringMV.addedExceptions;
   }
 
 
@@ -99,18 +79,18 @@ public class Exceptions implements Util {
     private final List<String> caughtExceptions = new ArrayList<>();
     private final Stack<Label> awaited = new Stack<>();
 
-    //mn -> Set<clsName + '#' + mdName + mdDesc>
+    //mn -> Set<clsName + mdName + mdDesc>
     private static final Map<MethodNode, Set<String>> calledMethods = new HashMap<>();
-    //clsName + '#' + mdName + mdDesc -> List<clsName>
+    //clsName + mdName + mdDesc -> List<clsName>
     private static final Map<String, List<String>> addedExceptions = new HashMap<>();
-    //clsName + '#' + mdName + mdDesc
+    //clsName + mdName + mdDesc
     private static Set<String> lastDirty = new HashSet<>();
-    //clsName + '#' + mdName + mdDesc
+    //clsName + mdName + mdDesc
     private static Set<String> currentDirty = new HashSet<>();
     private static boolean firstPass = true;
 
     private static final Map<String, Class<?>> classCache = new HashMap<>();
-    //clsName + '#' + mdName + mdDesc -> Method
+    //clsName + mdName + mdDesc -> Method
     private static final Map<String, Executable> methodCache = new HashMap<>();
 
     /**
@@ -127,7 +107,7 @@ public class Exceptions implements Util {
      * @param node
      */
     public void accept(MethodNode node) {
-      if(addedExceptions.containsKey(className + "#" + node.name + node.desc)) return;
+      if(addedExceptions.containsKey(className + node.name + node.desc)) return;
       if(!firstPass && (!calledMethods.containsKey(node) || calledMethods.get(node).stream().noneMatch(lastDirty::contains))) return;
       this.node = node;
       Type[] argTypes = Type.getArgumentTypes(node.desc);
@@ -358,7 +338,7 @@ public class Exceptions implements Util {
     }
 
     public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
-      String key = owner + "#" + name + descriptor;
+      String key = owner + name + descriptor;
       if(!(owner.equals(className) && name.equals(node.name) && descriptor.equals(node.desc))) getOrPut(calledMethods, node, new HashSet<>()).add(key);
       Type[] argTypes = Type.getArgumentTypes(descriptor);
       for(int i = 0; i < argTypes.length; i++) stack.pop();
@@ -391,7 +371,7 @@ public class Exceptions implements Util {
       }
       thrownExTypes.clear();
       if(!effExTypes.isEmpty()) {
-        String key = className + "#" + node.name + node.desc;
+        String key = className + node.name + node.desc;
         addedExceptions.put(key, effExTypes);
         currentDirty.add(key);
       }
@@ -494,8 +474,8 @@ public class Exceptions implements Util {
         Class<?> caughtExType = resolveClass(ex);
         return caughtExType != null && caughtExType.isAssignableFrom(jExType);
       })) return false;
-      if(Exceptions.exClasses.contains(exType)) return true;
-      if(Exceptions.runtimeExesAndErrors.contains(exType)) return false;
+      if(ExceptionMapper.exClasses.contains(exType)) return true;
+      if(ExceptionMapper.runtimeExesAndErrors.contains(exType)) return false;
       Class<?> jExType = resolveClass(exType);
       if(jExType == null) return true;
       if(RuntimeException.class.isAssignableFrom(jExType)) return false;
@@ -520,6 +500,7 @@ public class Exceptions implements Util {
         classCache.put(clsName, Class.forName(clsName));
         return classCache.get(clsName);
       } catch(ReflectiveOperationException e) {
+        classCache.put(clsName, null);
         return null;
       }
     }
@@ -533,22 +514,23 @@ public class Exceptions implements Util {
      * @return
      */
     private static Executable resolveMethod(Class<?> c, String name, String desc, Type[] argTypes) {
-      if(methodCache.containsKey(c + "#" + name + desc)) return methodCache.get(c + "#" + name + desc);
+      if(methodCache.containsKey(c + name + desc)) return methodCache.get(c + name + desc);
       Class<?>[] jArgTypes = Arrays.stream(argTypes).map(Type::getDescriptor).map(ExInferringMV::resolveClass).toArray(Class<?>[]::new);
       try {
         Executable ex;
         if("<init>".equals(name)) ex = c.getConstructor(jArgTypes);
         else ex = c.getMethod(name, jArgTypes);
-        methodCache.put(c + "#" + name + desc, ex);
+        methodCache.put(c + name + desc, ex);
         return ex;
       } catch(ReflectiveOperationException e) {
         try {
           Executable ex;
           if("<init>".equals(name)) ex = c.getDeclaredConstructor(jArgTypes);
           else ex = c.getDeclaredMethod(name, jArgTypes);
-          methodCache.put(c + "#" + name + desc, ex);
+          methodCache.put(c + name + desc, ex);
           return ex;
         } catch(ReflectiveOperationException e1) {
+          methodCache.put(c + name + desc, null);
           return null;
         }
       }
