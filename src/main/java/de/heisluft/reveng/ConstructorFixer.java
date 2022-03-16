@@ -62,7 +62,7 @@ public class ConstructorFixer implements Util {
         }
       }
       if(i == 0 || i == m.instructions.size()) return bytes;
-      System.out.println("Class: " + cn.name + " (extending " + cn.superName + ") Offset: " + i);
+      System.out.println("Fixing Class: " + cn.name + " (extending " + cn.superName + ") super call offset: " + i);
       // super call is not first
       AbstractInsnNode aload0 = m.instructions.get(i);
       m.instructions.remove(aload0);
@@ -70,8 +70,7 @@ public class ConstructorFixer implements Util {
       m.instructions.remove(ivsp);
       m.instructions.insert(ivsp);
       m.instructions.insert(aload0);
-      System.out.println("Fixing the constructor of " + cn.name);
-      ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
+      ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
       cn.accept(cw);
       return cw.toByteArray();
     }
