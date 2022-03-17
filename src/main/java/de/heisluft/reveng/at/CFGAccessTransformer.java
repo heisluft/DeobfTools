@@ -125,7 +125,7 @@ public class CFGAccessTransformer implements Util, AccessTransformer {
   public int getFieldAccess(String className, String fieldName, int access) {
     if(!fieldCommands.containsKey(className)) return access;
     Map<String, String> fdCommands = fieldCommands.get(className);
-    return fdCommands.containsKey(className) ? getModifiedAccess(access, fdCommands.get(fieldName)) : access;
+    return fdCommands.containsKey(fieldName) ? getModifiedAccess(access, fdCommands.get(fieldName)) : access;
   }
 
   @Override
