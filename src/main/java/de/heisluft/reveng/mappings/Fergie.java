@@ -308,6 +308,8 @@ public class Fergie implements Util, MappingsProvider {
           Set<String> ifaceMDs = cn.interfaces.stream().filter(inheritableMethods::containsKey).map(inheritableMethods::get).flatMap(Collection::stream).collect(Collectors.toSet());
           cn.methods.forEach(mn -> {
             if((mn.access & Opcodes.ACC_STATIC) == Opcodes.ACC_STATIC) {
+              //exclude public static void main(String[] args);
+              if("main".equals(mn.name) && "([Ljava/lang/String;)V".equals(mn.desc) && (mn.access & Opcodes.ACC_PUBLIC) == Opcodes.ACC_PUBLIC && !mappings.exceptions.containsKey(cn.name + "main(Ljava/lang/String;)V")) return;
               if(!"<clinit>".equals(mn.name) && !(cn.superName.equals(Type.getInternalName(Enum.class)) && genEnumMetDescs(cn.name).anyMatch(s -> s.equals(mn.name + mn.desc))))
                 mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(new Tuple2<>(mn.name, mn.desc), "md_" + methodCounter.getAndIncrement() + "_" + mn.name);
             } else if(noneContains(mn.name + mn.desc, superMDs, ifaceMDs, OBJECT_MDS))
