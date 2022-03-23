@@ -3,8 +3,11 @@ package de.heisluft.reveng;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
@@ -15,8 +18,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.Set;
+import java.util.function.Predicate;
 
 import static de.heisluft.function.FunctionalUtil.thrbc;
 import static de.heisluft.function.FunctionalUtil.thrc;
@@ -44,10 +49,8 @@ public class ConstructorFixer implements Util {
    *
    * @return the resulting classes bytes, may be modified
    */
-  private byte[] transformClassNode(byte[] bytes) {
-    ClassReader reader = new ClassReader(bytes);
-    ClassNode cn = new ClassNode();
-    reader.accept(cn, ClassReader.EXPAND_FRAMES);
+  private byte[] transformClassNode(byte[] bytes, Map<String, ClassNode> classCache) {
+    ClassNode cn = parseBytes(bytes);
 
     for(MethodNode m : cn.methods) {
       if(!m.name.equals("<init>")) continue;
@@ -74,7 +77,51 @@ public class ConstructorFixer implements Util {
       cn.accept(cw);
       return cw.toByteArray();
     }
-    return bytes;
+    ClassNode superNode = classCache.get(cn.superName);
+    if(superNode == null) return bytes;
+    System.out.println("class " + cn.name + " has no constructor... checking if one is needed");
+    Set<MethodNode> superCtors = new HashSet<>();
+    superNode.methods.stream().filter(mn -> "<init>".equals(mn.name)).forEach(superCtors::add);
+    if(superCtors.isEmpty()) {
+      System.out.println("No constructor needed, super has none");
+      return bytes;
+    }
+    if(superCtors.stream().map(mn -> mn.desc).anyMatch("()V"::equals)) {
+      System.out.println("Super has default constructor, we dont need to create one");
+      return bytes;
+    }
+    if(superCtors.size() > 1) {
+      System.out.println("super has multiple non-default constructor, manual patching will be needed");
+      return bytes;
+    }
+    MethodNode singleCtor = superCtors.iterator().next();
+    System.out.println("Adding constructor matching super, desc: " + singleCtor.desc);
+    cn.methods.add(0, createConstructor(singleCtor.desc, cn.superName, singleCtor.access));
+    ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+    cn.accept(writer);
+    return writer.toByteArray();
+  }
+
+  private MethodNode createConstructor(String desc, String superName, int superAcc) {
+    MethodNode node = new MethodNode(superAcc, "<init>", desc, null, null);
+    node.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+    for(int i = 0; i < Type.getArgumentTypes(desc).length; i++) {
+      node.instructions.add(new VarInsnNode(Opcodes.ALOAD, i + 1));
+    }
+    node.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, superName, "<init>", desc));
+    node.instructions.add(new InsnNode(Opcodes.RETURN));
+    return node;
+  }
+
+  private boolean hasClassFileExt(String path) {
+    return path.endsWith(".class");
+  }
+
+  private ClassNode parseBytes(byte[] bytes) {
+    ClassReader reader = new ClassReader(bytes);
+    ClassNode cn = new ClassNode();
+    reader.accept(cn, ClassReader.EXPAND_FRAMES);
+    return cn;
   }
 
   /**
@@ -89,20 +136,21 @@ public class ConstructorFixer implements Util {
    *     if the input jar could not be read or the output jar could not be written to
    */
   private void test(Path inJar, Path outJar) throws IOException {
-    Map<Path, byte[]> entries = new HashMap<>();
+    Map<String, byte[]> entries = new HashMap<>();
+    Map<String, ClassNode> nodes = new HashMap<>();
     try(FileSystem fs = createFS(inJar)) {
       Files.walk(fs.getPath("/")).filter(Files::isRegularFile)
-          .forEach(thrc(p -> entries.put(p, Files.readAllBytes(p))));
+          .forEach(thrc(p -> entries.put(p.toString(), Files.readAllBytes(p))));
     }
-    entries.keySet().stream().filter(this::hasClassExt)
-        .forEach(p -> entries.put(p, transformClassNode(entries.get(p))));
+    entries.keySet().stream().filter(this::hasClassFileExt).map(entries::get).map(this::parseBytes).forEach(cn -> nodes.put(cn.name, cn));
+    entries.keySet().stream().filter(this::hasClassFileExt).forEach(r -> entries.put(r, transformClassNode(entries.get(r), nodes)));
     Files.write(outJar,
         new byte[]{80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
     try(FileSystem fs = createFS(outJar)) {
-      entries.forEach(thrbc((path, bytes) -> {
-        Path p = fs.getPath(path.toString());
+      entries.keySet().stream().filter(p -> !p.startsWith("META-INF/")).forEach(thrc(path -> {
+        Path p = fs.getPath(path);
         Files.createDirectories(p.getParent());
-        Files.write(p, bytes);
+        Files.write(p, entries.get(path));
       }));
     }
   }
