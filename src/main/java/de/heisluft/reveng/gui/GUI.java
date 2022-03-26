@@ -1,7 +1,9 @@
 package de.heisluft.reveng.gui;
 
 import de.heisluft.function.Tuple2;
+import de.heisluft.reveng.Analyzer;
 import de.heisluft.reveng.Util;
+import de.heisluft.stream.BiStream;
 import org.objectweb.asm.tree.*;
 
 import javax.swing.*;
@@ -14,7 +16,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.List;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 import static de.heisluft.function.FunctionalUtil.*;
 
@@ -107,7 +111,21 @@ public class GUI implements Util {
         });
       });
     });
-    Tuple2.streamMap(methodRelations).filter(tuple -> tuple._2.size() < 2).filter(tuple-> Tuple2.streamMap(tuple._2).allMatch(t -> t._2.size() == 1)).filter(tuple -> !fieldRelations.containsKey(tuple._1)).sorted(Comparator.comparing(o -> o._1)).map(tuple -> tuple.map((s, map) -> s + " -> " + Tuple2.streamMap(map).map(t -> t.map((s1, strings) -> s1 + "#" + strings.iterator().next())).findFirst().get())).forEach(System.out::println);
+    BiStream.streamMap(methodRelations)
+        .filter2(map -> map.size() < 2 && map.values().stream().allMatch(set -> set.size() == 1))
+        .filter1(not(fieldRelations::containsKey))
+        .sorted(Comparator.comparing(Tuple2::_1))
+        .map2(map -> BiStream.streamMap(map).map2(GUI::getFirst).map(join("#")).iterator().next())
+        .map(join(" -> "))
+        .forEach(System.out::println);
+  }
+
+  private static ThrowingBiFunction<String, String, String> join(String infix) {
+    return (s, s2) -> s + infix + s2;
+  }
+
+  private static  <T> T getFirst(Set<T> collection) {
+    return collection.iterator().next();
   }
 
   public static void main(String[] args) throws UnsupportedLookAndFeelException, ReflectiveOperationException {

@@ -2,6 +2,7 @@ package de.heisluft.reveng.mappings;
 
 import de.heisluft.function.Tuple2;
 import de.heisluft.reveng.Remapper;
+import de.heisluft.stream.BiStream;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -168,9 +169,9 @@ public class Mappings {
    */
   public Mappings clean() {
     Mappings mappings = new Mappings();
-    mappings.classes.putAll(Tuple2.streamMap(classes).filter(t -> !t._1.equals(t._2)).collect(Tuple2.toMapCollector()));
+    mappings.classes.putAll(BiStream.streamMap(classes).filter(String::equals).toMap());
     fields.forEach((className, map) -> {
-      if(Tuple2.streamMap(map).allMatch(t -> t._1.equals(t._2)))return;
+      if(BiStream.streamMap(map).allMatch(String::equals)) return;
       Map<String, String> values = new HashMap<>();
       map.forEach((fieldName, remappedFieldName) -> {
         if(!fieldName.equals(remappedFieldName)) values.put(fieldName, remappedFieldName);
@@ -178,7 +179,7 @@ public class Mappings {
       mappings.fields.put(className, values);
     });
     methods.forEach((className, map) -> {
-      if(Tuple2.streamMap(map).allMatch(t -> t._1._1.equals(t._2) && !exceptions.containsKey(className + t._1._1 + t._1._2))) return;
+      if(BiStream.streamMap(map).allMatch((tup, s) -> tup._1.equals(s) && !exceptions.containsKey(className + tup._1 + tup._2))) return;
       Map<Tuple2<String, String>, String> values = new HashMap<>();
       map.forEach((tuple, remappedMethodName) -> {
         if(!tuple._1.equals(remappedMethodName) || exceptions.containsKey(className + tuple._1 + tuple._2)) values.put(tuple, remappedMethodName);

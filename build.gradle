@@ -17,7 +17,7 @@ repositories {
 
 dependencies {
     implementation 'org.ow2.asm:asm-tree:9.2'
-    implementation 'de.heisluft:futile:1.0.0'
+    implementation 'de.heisluft:futile:1.1.0'
 }
 
 shadowJar {
