@@ -1,7 +1,6 @@
 package de.heisluft.reveng.gui;
 
 import de.heisluft.function.Tuple2;
-import de.heisluft.reveng.Analyzer;
 import de.heisluft.reveng.Util;
 import de.heisluft.stream.BiStream;
 import org.objectweb.asm.tree.*;
@@ -11,14 +10,10 @@ import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.io.IOException;
-import java.nio.file.FileSystem;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.List;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
-import java.util.stream.Stream;
 
 import static de.heisluft.function.FunctionalUtil.*;
 
