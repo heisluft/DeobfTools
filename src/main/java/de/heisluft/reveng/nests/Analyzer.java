@@ -1,6 +1,8 @@
-package de.heisluft.reveng;
+package de.heisluft.reveng.nests;
 
 import de.heisluft.function.Tuple2;
+import de.heisluft.reveng.Util;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 
@@ -27,16 +29,18 @@ import java.util.stream.Collectors;
 // for anonymous classes declared within methods: outerMethod and outerMethodDesc are set
 public class Analyzer implements Util {
 
-  private final Map<String, ClassNode> classNodes = new HashMap<>();
   private final Map<String, Set<String>> tree;
   Set<String> innerClassCandidates = new HashSet<>();
 
   private Analyzer(Path jarPath) throws IOException {
-    classNodes.putAll(parseClasses(jarPath, Collections.singletonList("/com/")));
+    Map<String, ClassNode> classNodes =parseClasses(jarPath, Collections.singletonList("/de/heisluft/RootClass"));
     tree = new HashMap<>(classNodes.size());
-    classNodes.values().stream().filter(cn ->!cn.fields.isEmpty() && cn.fields.stream().map(fieldNode -> fieldNode.access).allMatch(Remapper::isSynthetic)).map(cn -> cn.name).forEach(innerClassCandidates::add);
+    classNodes.values().stream().filter(cn ->!cn.fields.isEmpty() && cn.fields.stream().map(fieldNode -> fieldNode.access).allMatch(access -> (access & Opcodes.ACC_SYNTHETIC) != 0)).map(cn -> cn.name).forEach(innerClassCandidates::add);
     Map<String, Set<Tuple2<String, MethodNode>>> references = new HashMap<>();
     classNodes.values().forEach(cn -> {
+      System.out.println(cn.name + ": " + AnonData.applyFrom(cn));
+      cn.innerClasses.stream().map(AnonData::innerToString).forEach(System.out::println);
+      System.out.println();
       cn.fields.stream()
           .map(fieldNode -> fieldNode.desc)
           .map(Type::getType)
