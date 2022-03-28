@@ -192,7 +192,7 @@ public class Remapper implements Util {
     return fName;
   }
 
-  static boolean isSynthetic(int access) {
+  private static boolean isSynthetic(int access) {
     return (access & Opcodes.ACC_SYNTHETIC) == Opcodes.ACC_SYNTHETIC;
   }
 
