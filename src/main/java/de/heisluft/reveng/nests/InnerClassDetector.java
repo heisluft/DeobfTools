@@ -168,6 +168,9 @@ public class InnerClassDetector implements Util {
     final Map<String, Set<String>> synFields = new HashMap<>();
     final Map<String, Set<Tuple2<String, String>>> staticAccessors = new HashMap<>();
     final Map<String, Set<Tuple2<String, String>>> instanceAccessors = new HashMap<>();
+    final Map<String, Set<String>> instanceInvocations = new HashMap<>();
+    final Map<String, String> anonClasses;
+
     classes.values().forEach(cn -> {
       // skip synthetic classes, they'd ideally be checked for enum switches, TODO: Merge
       if((cn.access & ACC_SYNTHETIC) != 0) return;
@@ -220,17 +223,28 @@ public class InnerClassDetector implements Util {
       });
     });
     classes.values().forEach(cn -> {
+
       cn.methods.forEach(mn -> {
         for(AbstractInsnNode ain : mn.instructions) {
           if(ain instanceof MethodInsnNode) {
             MethodInsnNode min = (MethodInsnNode) ain;
-            if(staticAccessors.getOrDefault(min.owner, new HashSet<>()).contains(new Tuple2<>(min.name, min.desc)))
-              System.out.println("");
-
+          }
+          if(ain.getOpcode() == NEW) {
+            String createdCName = ((TypeInsnNode) ain).desc;
+            if(synFields.containsKey(createdCName)) {
+              getOrPut(instanceInvocations, createdCName, new HashSet<>()).add(cn.name);
+            }
           }
         }
       });
     });
+  }
+
+
+  private static boolean isSamePackage(String c1, String c2) {
+    if(!c1.contains("/")) return !c2.contains("/");
+    return c2.contains("/") &&
+        c1.substring(0, c1.lastIndexOf('/')).equals(c2.substring(0, c2.lastIndexOf('/')));
   }
 
   private boolean argTypeIsntReturnType(String argType, String returnType) {
