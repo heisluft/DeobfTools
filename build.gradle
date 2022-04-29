@@ -1,12 +1,23 @@
+import org.gradle.api.publish.maven.MavenPublication
+import org.gradle.api.tasks.bundling.Jar
+import org.gradle.authentication.http.BasicAuthentication
+
 plugins {
     id 'java'
     id 'com.github.johnrengelman.shadow' version '7.1.2'
+    id 'signing'
+    id 'maven-publish'
 }
 
 group 'de.heisluft.reveng'
 version '0.0.1'
 
 sourceCompatibility = targetCompatibility = JavaVersion.VERSION_1_8
+
+task sourcesJar(type: Jar, dependsOn: classes) {
+    archiveClassifier.set 'sources'
+    from sourceSets.main.allSource
+}
 
 repositories {
     mavenCentral()
@@ -22,5 +33,24 @@ dependencies {
 
 shadowJar {
     manifest.attributes.put('Main-Class', 'de.heisluft.reveng.Remapper')
-    archiveFileName.set(archiveBaseName.get() + '.jar')
+}
+
+publishing {
+    repositories.maven {
+        url mavenUrl
+        credentials {
+            username = mavenUsername
+            password = mavenPassword
+        }
+        authentication.withType(BasicAuthentication)
+    }
+    publications.create('maven', MavenPublication) {
+        it.from components.getByName('java')
+        it.artifact sourcesJar
+    }
+}
+
+signing {
+    useGpgCmd()
+    sign publishing.publications.maven
 }
