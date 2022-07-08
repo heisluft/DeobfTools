@@ -34,7 +34,7 @@ import static de.heisluft.function.FunctionalUtil.thrc;
 //TODO: Remapping of innerClass field, inferring of inner classes will happen before remapping!
 //TODO: Think about a clever way to restore generic signatures on fields and based on that, methods
 //TODO: Come up with an idea on how to restore generic signatures of obfuscated classes with the help of the specialized subclass bridge methods
-//The Ultimate Goal would be a remapper which is smart enough to generate the specialized methods from bridge methods and maybe even inferring checked exceptions.
+//The Ultimate Goal would be a Remapper which is smart enough to generate the specialized methods from bridge methods
 public class Remapper implements Util {
   public static final Remapper INSTANCE = new Remapper();
 
