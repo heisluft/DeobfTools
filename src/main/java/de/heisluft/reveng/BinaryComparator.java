@@ -23,7 +23,7 @@ public class BinaryComparator implements Util {
       Files.walk(fs.getPath("/")).filter(this::hasClassExt).forEach(p -> {
         Path p2 = fs2.getPath(p.toString());
         if(!Files.exists(p2)) {
-          System.out.println("class " + p + " not present in s");
+          System.out.println("class " + p + " not present in cmp2");
           return;
         }
         try {
@@ -61,7 +61,7 @@ public class BinaryComparator implements Util {
   }
 
   public static void main(String[] args) throws IOException, NoSuchAlgorithmException {
-    String prt = "remap-tests/jars/mc/client/classic/";
-    new BinaryComparator().doStuff(Paths.get(prt + "c0.30_s.jar"), Paths.get(prt + "c0.30_c.jar"));
+    Path prt = Paths.get("remap-tests/jars/mc/");
+    new BinaryComparator().doStuff(prt.resolve("client/classic/c0.30_s.jar"), prt.resolve("client/indev/in-20091223-2.jar"));
   }
 }
