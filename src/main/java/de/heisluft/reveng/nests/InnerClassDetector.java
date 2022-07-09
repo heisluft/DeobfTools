@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -79,7 +80,7 @@ public class InnerClassDetector implements Util {
         continue;
       }
       // A method accessor should only ever relay method calls
-      // InvokeSpecial and invokestatic are the only permitted calls
+      // invokevirtual and invokestatic are the only permitted calls
       if(!(ain instanceof MethodInsnNode) || opCode == INVOKEVIRTUAL || opCode == INVOKEINTERFACE) {
         return NONE;
       }
@@ -106,7 +107,7 @@ public class InnerClassDetector implements Util {
    * @return
    */
   private boolean isFieldAccessMethod(InsnList insnList, String cName, Set<String> matchedFields) {
-    // we should only access one single field show we store it as soon as we encounter it.
+    // we should only access one single field so we store it as soon as we encounter it.
     String fieldLock = null;
     Boolean staticLock = null; // Ya we need that good old tri state bool
     for(AbstractInsnNode ain : insnList) {
@@ -147,7 +148,7 @@ public class InnerClassDetector implements Util {
         staticLock = ain.getOpcode() == GETSTATIC || ain.getOpcode() == PUTSTATIC;
       }
       // only the += string accessor is actually invoking methods
-      // and it is only calling string builder ones.
+      // and it is only calling string builder once.
       if(ain instanceof MethodInsnNode) {
         MethodInsnNode min = (MethodInsnNode) ain;
         if(ain.getOpcode() == INVOKEINTERFACE || ain.getOpcode() == INVOKESTATIC) return false;
@@ -164,12 +165,15 @@ public class InnerClassDetector implements Util {
   }
 
   public void detect(Path input) throws IOException {
-    final Map<String, ClassNode> classes = parseClasses(input, Collections.singletonList("/de/heisluft/Ro"));
+    // the set of all classes, mapped by their respective name
+    final Map<String, ClassNode> classes = parseClasses(input);
+    // a set of all synthetic field names for each class name
     final Map<String, Set<String>> synFields = new HashMap<>();
     final Map<String, Set<Tuple2<String, String>>> staticAccessors = new HashMap<>();
     final Map<String, Set<Tuple2<String, String>>> instanceAccessors = new HashMap<>();
-    final Map<String, Set<String>> instanceInvocations = new HashMap<>();
-    final Map<String, String> anonClasses;
+    final Map<String, Integer> instanceInvocations = new HashMap<>();
+    final Map<String, Set<String>> instanceClasses = new HashMap<>();
+    final Map<String, Set<String>> anonInnerClasses = new HashMap<>();
 
     classes.values().forEach(cn -> {
       // skip synthetic classes, they'd ideally be checked for enum switches, TODO: Merge
@@ -179,7 +183,44 @@ public class InnerClassDetector implements Util {
           .filter(fn -> (fn.access & ACC_SYNTHETIC) != 0)
           .forEach(fn -> getOrPut(synFields, cn.name, new HashSet<>()).add(fn.name));
 
-      cn.methods.stream().filter(mn -> (mn.access & ACC_SYNTHETIC) != 0).forEach(mn -> {
+      cn.methods.forEach(mn -> {
+        if((mn.access & ACC_SYNTHETIC) == 0) {
+          if(!"<init>".equals(mn.name)) return;
+          @SuppressWarnings("unchecked")
+          Set<String> synFieldsForClass = new HashSet<>(synFields.getOrDefault(cn.name, Collections.EMPTY_SET));
+          if(synFieldsForClass.isEmpty()) return;
+
+          Type[] argTypes = Type.getArgumentTypes(mn.desc);
+          if(argTypes.length == 0) return;
+
+          boolean supInvokFound = false;
+
+          for(AbstractInsnNode ain : mn.instructions) {
+            if(!supInvokFound && ain.getOpcode() == ALOAD && ((VarInsnNode) ain).var == 0) {
+              AbstractInsnNode next = ain.getNext();
+              if(!isLoadInsn(next.getOpcode())) continue;
+              int local = ((VarInsnNode) next).var;
+              next = next.getNext();
+              if(next.getOpcode() != PUTFIELD) continue;
+              FieldInsnNode fin = (FieldInsnNode) next;
+              if(!fin.owner.equals(cn.name) || !argTypes[local - 1].getDescriptor().equals(fin.desc)) continue;
+              if(!synFieldsForClass.contains(fin.name)) continue;
+              synFieldsForClass.remove(fin.name);
+            }
+            if(ain.getOpcode() != INVOKESPECIAL) continue;
+            supInvokFound = true;
+          }
+          if(!synFieldsForClass.isEmpty()) {
+            System.out.println("class " + cn.name + " initializes non-synthetic fields before super()?");
+            return;
+          }
+          String outerName = argTypes[0].getInternalName();
+          if(synFields.get(cn.name).size() > 1) getOrPut(anonInnerClasses, outerName, new HashSet<>()).add(cn.name);
+          else {
+            getOrPut(instanceClasses, outerName, new HashSet<>()).add(cn.name);
+            instanceInvocations.put(cn.name, 0);
+          }
+        }
         String retDesc = mn.desc.substring(mn.desc.lastIndexOf(')') + 1);
         Type[] argTypes = Type.getArgumentTypes(mn.desc);
         int methodAccessType = getMethodAccessType(mn.instructions, cn.name,
@@ -222,24 +263,25 @@ public class InnerClassDetector implements Util {
           getOrPut(staticAccessors, cn.name, new HashSet<>()).add(new Tuple2<>(mn.name, mn.desc));
       });
     });
+    System.out.println("anonInnerClasses: " + anonInnerClasses);
+    System.out.println("instanceClasses " + instanceClasses);
+
+    Set<String> instanceClassSet = instanceClasses.values().stream().flatMap(Set::stream).collect(Collectors.toSet());
+
     classes.values().forEach(cn -> {
 
       cn.methods.forEach(mn -> {
         for(AbstractInsnNode ain : mn.instructions) {
           if(ain instanceof MethodInsnNode) {
             MethodInsnNode min = (MethodInsnNode) ain;
-          }
-          if(ain.getOpcode() == NEW) {
-            String createdCName = ((TypeInsnNode) ain).desc;
-            if(synFields.containsKey(createdCName)) {
-              getOrPut(instanceInvocations, createdCName, new HashSet<>()).add(cn.name);
-            }
+            String owner = min.owner;
+            if(instanceClassSet.contains(owner)) instanceInvocations.put(owner, instanceInvocations.get(owner) + 1);
           }
         }
       });
     });
+    System.out.println(instanceInvocations);
   }
-
 
   private static boolean isSamePackage(String c1, String c2) {
     if(!c1.contains("/")) return !c2.contains("/");
@@ -247,7 +289,11 @@ public class InnerClassDetector implements Util {
         c1.substring(0, c1.lastIndexOf('/')).equals(c2.substring(0, c2.lastIndexOf('/')));
   }
 
-  private boolean argTypeIsntReturnType(String argType, String returnType) {
+  private static boolean isLoadInsn(int opCode) {
+    return opCode >= ILOAD && opCode <= ALOAD;
+  }
+
+  private static boolean argTypeIsntReturnType(String argType, String returnType) {
     if(argType.equals(returnType)) return false;
     switch(returnType) {
       case "Z":
