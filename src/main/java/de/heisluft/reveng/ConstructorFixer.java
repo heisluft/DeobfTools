@@ -6,7 +6,6 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
-import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
@@ -21,10 +20,9 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Predicate;
 
-import static de.heisluft.function.FunctionalUtil.thrbc;
 import static de.heisluft.function.FunctionalUtil.thrc;
+import static org.objectweb.asm.Opcodes.ACC_STATIC;
 
 /**
  * The constructor fixer is a tool to move empty super() calls to the first position, easing recompilation
@@ -51,32 +49,37 @@ public class ConstructorFixer implements Util {
    */
   private byte[] transformClassNode(byte[] bytes, Map<String, ClassNode> classCache) {
     ClassNode cn = parseBytes(bytes);
-
-    for(MethodNode m : cn.methods) {
-      if(!m.name.equals("<init>")) continue;
-      int i;
-      for(i = 0; i < m.instructions.size(); i++) {
-        AbstractInsnNode ain = m.instructions.get(i);
-        if(ain instanceof VarInsnNode && ((VarInsnNode) ain).var == 0) {
-          if(ain.getNext().getOpcode() == Opcodes.INVOKESPECIAL) {
-            MethodInsnNode min = ((MethodInsnNode) ain.getNext());
-            if(min.owner.equals(cn.superName) && min.desc.equals("()V")) break;
+    // Instance Inner Classes should not have their constructor data shuffled
+    // The code is left in place for classes whose data was not restored
+    if(Util.hasNone(cn.access, ACC_STATIC) && cn.innerClasses.stream().noneMatch(icn -> icn.name.equals(cn.name))) {
+      for(MethodNode m : cn.methods) {
+        if(!m.name.equals("<init>")) continue;
+        int i;
+        for(i = 0; i < m.instructions.size(); i++) {
+          AbstractInsnNode ain = m.instructions.get(i);
+          if(ain instanceof VarInsnNode && ((VarInsnNode) ain).var == 0) {
+            if(ain.getNext().getOpcode() == Opcodes.INVOKESPECIAL) {
+              MethodInsnNode min = ((MethodInsnNode) ain.getNext());
+              if(min.owner.equals(cn.superName) && min.desc.equals("()V")) break;
+            }
           }
         }
+        if(i == 0 || i == m.instructions.size()) return bytes;
+        System.out.println(
+            "Fixing Class: " + cn.name + " (extending " + cn.superName + ") super call offset: " + i);
+        // super call is not first
+        AbstractInsnNode aload0 = m.instructions.get(i);
+        m.instructions.remove(aload0);
+        AbstractInsnNode ivsp = m.instructions.get(i);
+        m.instructions.remove(ivsp);
+        m.instructions.insert(ivsp);
+        m.instructions.insert(aload0);
+        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        cn.accept(cw);
+        return cw.toByteArray();
       }
-      if(i == 0 || i == m.instructions.size()) return bytes;
-      System.out.println("Fixing Class: " + cn.name + " (extending " + cn.superName + ") super call offset: " + i);
-      // super call is not first
-      AbstractInsnNode aload0 = m.instructions.get(i);
-      m.instructions.remove(aload0);
-      AbstractInsnNode ivsp = m.instructions.get(i);
-      m.instructions.remove(ivsp);
-      m.instructions.insert(ivsp);
-      m.instructions.insert(aload0);
-      ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
-      cn.accept(cw);
-      return cw.toByteArray();
     }
+
     ClassNode superNode = classCache.get(cn.superName);
     if(superNode == null) return bytes;
     System.out.println("class " + cn.name + " has no constructor... checking if one is needed");
