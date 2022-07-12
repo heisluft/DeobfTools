@@ -31,7 +31,7 @@ import java.util.stream.Collectors;
 
 import static de.heisluft.function.FunctionalUtil.thrc;
 
-//TODO: Remapping of innerClass field, inferring of inner classes will happen before remapping!
+//TODO: Remapping of innerClass field, inferring of inner classes will probably happen before remapping!
 //TODO: Think about a clever way to restore generic signatures on fields and based on that, methods
 //TODO: Come up with an idea on how to restore generic signatures of obfuscated classes with the help of the specialized subclass bridge methods
 //The Ultimate Goal would be a Remapper which is smart enough to generate the specialized methods from bridge methods
@@ -199,11 +199,6 @@ public class Remapper implements Util {
   private void remapJar(Path inputPath, Path mappingsPath, Path outputPath, List<String> ignorePaths) throws IOException {
     classNodes.putAll(parseClasses(inputPath, ignorePaths));
     Mappings mappings = MappingsInterface.findProvider(mappingsPath.toString()).parseMappings(mappingsPath);
-    List<String> anonymousClassCandidates = classNodes.values().stream().filter(
-        node -> ((!node.fields.isEmpty() && node.fields.stream().map(f -> f.access).allMatch(
-            Remapper::isSynthetic))
-            || (node.interfaces.size() == 1 && node.methods.stream().allMatch(m -> !"<init>".equals(m.name) && !"<clinit>".equals(m.name) && isSynthetic(m.access)))))
-        .map(c -> c.name).collect(Collectors.toList());
     classNodes.values().forEach(node -> {
           node.methods.forEach(mn -> {
             if(isSynthetic(mn.access) && !Type.getInternalName(Enum.class).equals(node.superName) && (mn.access & Opcodes.ACC_BRIDGE) == Opcodes.ACC_BRIDGE) {
@@ -262,18 +257,6 @@ public class Remapper implements Util {
           }
           if(ins instanceof TypeInsnNode) {
             TypeInsnNode typeNode = (TypeInsnNode) ins;
-            if(typeNode.getOpcode() == Opcodes.NEW && anonymousClassCandidates.contains(typeNode.desc)) {
-              String outerMethodName = remapMethodName(n, mn.name, mn.desc, mappings);
-              String outerMethodDesc = remapDescriptor(mn.desc, mappings);
-              String outerClassName = mappings.getClassName(n.name);
-              //TODO: Remove as soon as ProjectChoir is finished
-              System.out.println(mappings.getClassName(typeNode.desc) + " was likely an anonymous class in method " + outerMethodName + outerMethodDesc + " of class " + outerClassName);
-              System.out.println("Automatic Reconstruction is not yet finished");
-              ClassNode anonClass = classNodes.get(typeNode.desc);
-              //anonClass.outerMethodDesc = outerMethodDesc;
-              //anonClass.outerMethod = outerMethodName;
-              //anonClass.outerClass = outerClassName;
-            }
             typeNode.desc = typeNode.desc.startsWith("[") ? remapDescriptor(typeNode.desc, mappings) : mappings.getClassName(typeNode.desc);
           }
           if(ins instanceof LdcInsnNode) {
