@@ -25,6 +25,7 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+// TODO: Use this to autogen anon class remapping data
 public class InnerClassDetector implements Util {
 
   private static final int NONE = -1, INSTANCE = 0, STATIC = 1;
