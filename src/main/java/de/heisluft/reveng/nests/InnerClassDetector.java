@@ -244,7 +244,9 @@ public class InnerClassDetector implements Util {
             return;
           }
           String outerName = argTypes[0].getInternalName();
-          getOrPut(instanceClasses, outerName, new HashSet<>()).add(cn.name);
+          // Anonymous classes must have a constructor with package visibility
+          if((mn.access & 0b111) != 0) getOrPut(nonAnons, outerName, new HashSet<>()).add(cn.name);
+          else getOrPut(instanceClasses, outerName, new HashSet<>()).add(cn.name);
           reverseOuterLookup.put(cn.name, outerName);
         }
         String retDesc = mn.desc.substring(mn.desc.lastIndexOf(')') + 1);
