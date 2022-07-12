@@ -1,7 +1,3 @@
-import org.gradle.api.publish.maven.MavenPublication
-import org.gradle.api.tasks.bundling.Jar
-import org.gradle.authentication.http.BasicAuthentication
-
 plugins {
     id 'java'
     id 'com.github.johnrengelman.shadow' version '7.1.2'
@@ -10,7 +6,7 @@ plugins {
 }
 
 group 'de.heisluft.reveng'
-version '0.0.1'
+version '0.0.2'
 
 sourceCompatibility = targetCompatibility = JavaVersion.VERSION_1_8
 
@@ -31,9 +27,7 @@ dependencies {
     implementation 'de.heisluft:futile:1.1.0'
 }
 
-shadowJar {
-    manifest.attributes.put('Main-Class', 'de.heisluft.reveng.Remapper')
-}
+shadowJar.manifest.attributes.put('Main-Class', 'de.heisluft.reveng.Remapper')
 
 publishing {
     repositories.maven {
