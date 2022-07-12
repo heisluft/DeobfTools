@@ -90,7 +90,7 @@ public class EnumSwitchClassDetector implements Util {
       ClassNode useNode = classes.get(used.iterator().next());
       ClassNode synNode = classes.get(syn);
       InnerClassNode nestDesc = new InnerClassNode(syn, null, null, synNode.access);
-      System.out.println(syn + "is an enum switch lookup class. Making it a nested class of " + useNode.name);
+      System.out.println(syn + " is an enum switch lookup class. Making it a nested class of " + useNode.name);
       useNode.innerClasses.add(nestDesc);
       synNode.innerClasses.add(nestDesc);
       synNode.outerClass = useNode.name;
