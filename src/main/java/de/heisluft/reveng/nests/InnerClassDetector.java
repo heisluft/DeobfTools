@@ -33,8 +33,13 @@ public class InnerClassDetector implements Util {
   public static void main(String[] args) throws IOException {
     System.out.println("Class Heuristics for Outer-Inner Relationships - Project CHOIR\n");
 
-    Path input = Paths.get("c0.30_c-deobf.jar");
-    Path output = Paths.get("c0.30_c-restored.jar");
+    if(args.length < 2) {
+      System.out.println("Usage InnerClassDetector <input> <output>");
+      return;
+    }
+
+    Path input = Paths.get(args[0]);
+    Path output = Paths.get(args[1]);
 
     Files.copy(input, output, StandardCopyOption.REPLACE_EXISTING);
     Util u = new Util() {};
