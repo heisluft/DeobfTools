@@ -31,7 +31,6 @@ import java.util.stream.Collectors;
 
 import static de.heisluft.function.FunctionalUtil.thrc;
 
-//TODO: Remapping of innerClass field, inferring of inner classes will probably happen before remapping!
 //TODO: Think about a clever way to restore generic signatures on fields and based on that, methods
 //TODO: Come up with an idea on how to restore generic signatures of obfuscated classes with the help of the specialized subclass bridge methods
 //The Ultimate Goal would be a Remapper which is smart enough to generate the specialized methods from bridge methods
@@ -290,11 +289,22 @@ public class Remapper implements Util {
         n.superName =  mappings.getClassName(n.superName);
         n.interfaces = n.interfaces.stream().map(mappings::getClassName).collect(Collectors.toList());
         n.innerClasses.forEach(c -> {
-          c.innerName = mappings.getClassName(c.innerName);
-          c.outerName = mappings.getClassName(c.outerName);
           c.name = mappings.getClassName(c.name);
+          c.outerName = mappings.getClassName(c.outerName);
+          String s = c.name;
+          // Fallback for obfuscated classes.
+          c.innerName = c.innerName == null ? null : s.contains("$") ? s.substring(s.lastIndexOf('$') + 1) : s.contains("/") ? s.substring(s.lastIndexOf('/') + 1) : s;
         });
-        ClassWriter w = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        // Enum Switches and anon classes
+        if(n.outerClass != null) {
+          // Anon Classes
+          if(n.outerMethod != null) {
+            n.outerMethod = mappings.getMethodName(n.outerClass, n.outerMethod, n.outerMethodDesc);
+            n.outerMethodDesc = remapDescriptor(n.outerMethodDesc, mappings);
+          }
+          n.outerClass = mappings.getClassName(n.outerClass);
+        }
+        ClassWriter w = new ClassWriter(0);
         n.accept(w);
         if(n.name.contains("/")) Files.createDirectories(fs.getPath(n.name.substring(0, n.name.lastIndexOf('/'))));
         Files.write(fs.getPath(n.name + ".class"), w.toByteArray());
