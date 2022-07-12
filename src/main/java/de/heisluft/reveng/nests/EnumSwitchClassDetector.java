@@ -70,6 +70,36 @@ public class EnumSwitchClassDetector implements Util {
   }
 
   /**
+   * Restores the metadata of enumswitch lookup classes and their containing classes.
+   * @param classes the map of all parsed classes. values will be mutated.
+   * @param dirtyClasses a set of classes to be reserialized. filled up, but never removed from.
+   */
+  void restoreMeta(Map<String, ClassNode> classes, Set<String> dirtyClasses) {
+    Map<String, String> candidates = new HashMap<>();
+    classes.values().stream().filter(cn -> (cn.access & Opcodes.ACC_SYNTHETIC) != 0 && cn.fields.size() == 1 && isLookupTableCandidate(cn.fields.get(0))).forEach(n -> candidates.put(n.name, n.fields.get(0).name));
+    Map<String, Set<String>> uses = new HashMap<>();
+    classes.values().forEach(cn ->
+        cn.methods.forEach(mn ->
+            BiStream.streamMap(candidates).filter(
+                (cName, fName) -> !cn.name.equals(cName) && containsFieldGet(mn.instructions, cName, fName)
+            ).forEach((cName, fName) -> getOrPut(uses, cName, new HashSet<>()).add(cn.name))
+        )
+    );
+    uses.forEach((syn, used) -> {
+      if(used.size() != 1) return;
+      ClassNode useNode = classes.get(used.iterator().next());
+      ClassNode synNode = classes.get(syn);
+      InnerClassNode nestDesc = new InnerClassNode(syn, null, null, synNode.access);
+      System.out.println(syn + "is an enum switch lookup class. Making it a nested class of " + useNode.name);
+      useNode.innerClasses.add(nestDesc);
+      synNode.innerClasses.add(nestDesc);
+      synNode.outerClass = useNode.name;
+      dirtyClasses.add(useNode.name);
+      dirtyClasses.add(syn);
+    });
+  }
+
+  /**
    * Reads all classes of input,
    * Restores the Metadata of EnumSwitch lookup classes and their containing classes
    * and writes the resulting jar to output
@@ -80,36 +110,15 @@ public class EnumSwitchClassDetector implements Util {
    */
   private void restoreMeta(Path input, Path output) throws IOException {
     Files.copy(input, output, StandardCopyOption.REPLACE_EXISTING);
-    Map<String, ClassNode> nodeCache = parseClasses(output);
-    Map<String, String> candidates = new HashMap<>();
+    Map<String, ClassNode> classes = parseClasses(output);
     Set<String> dirtyClasses = new HashSet<>();
-    nodeCache.values().stream().filter(cn -> (cn.access & Opcodes.ACC_SYNTHETIC) != 0 && cn.fields.size() == 1 && isLookupTableCandidate(cn.fields.get(0))).forEach(n -> candidates.put(n.name, n.fields.get(0).name));
-    Map<String, Set<String>> uses = new HashMap<>();
-    nodeCache.values().forEach(cn ->
-        cn.methods.forEach(mn ->
-           BiStream.streamMap(candidates).filter(
-               (cName, fName) -> !cn.name.equals(cName) && containsFieldGet(mn.instructions, cName, fName)
-            ).forEach((cName, fName) -> getOrPut(uses, cName, new HashSet<>()).add(cn.name))
-        )
-    );
-    uses.forEach((syn, used) -> {
-      if(used.size() != 1) return;
-      ClassNode useNode = nodeCache.get(used.iterator().next());
-      ClassNode synNode = nodeCache.get(syn);
-      InnerClassNode nestDesc = new InnerClassNode(syn, null, null, synNode.access);
-      System.out.println("making " + syn + " a nested class of " + useNode.name);
-      useNode.innerClasses.add(nestDesc);
-      synNode.innerClasses.add(nestDesc);
-      synNode.outerClass = useNode.name;
-      dirtyClasses.add(useNode.name);
-      dirtyClasses.add(syn);
-    });
+    restoreMeta(classes, dirtyClasses);
     if(dirtyClasses.isEmpty()) return;
     try(FileSystem fs = createFS(output)) {
       Path root = fs.getPath("/");
       for(String d : dirtyClasses) {
         ClassWriter writer = new ClassWriter(0);
-        nodeCache.get(d).accept(writer);
+        classes.get(d).accept(writer);
         Files.write(root.resolve(d + ".class"), writer.toByteArray());
       }
     }

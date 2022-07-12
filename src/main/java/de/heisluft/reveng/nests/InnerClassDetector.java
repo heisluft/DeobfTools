@@ -4,15 +4,18 @@ import de.heisluft.function.Tuple2;
 import de.heisluft.reveng.Util;
 import static org.objectweb.asm.Opcodes.*;
 
+import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 
 import java.io.IOException;
+import java.nio.file.FileSystem;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -27,7 +30,27 @@ public class InnerClassDetector implements Util {
   private static final int NONE = -1, INSTANCE = 0, STATIC = 1;
 
   public static void main(String[] args) throws IOException {
-    new InnerClassDetector().detect(Paths.get("../compilertest/build/libs/compilertest.jar"));
+    System.out.println("Class Heuristics for Outer-Inner Relationships - Project CHOIR\n");
+
+    Path input = Paths.get("c0.30_c-deobf.jar");
+    Path output = Paths.get("c0.30_c-restored.jar");
+
+    Files.copy(input, output, StandardCopyOption.REPLACE_EXISTING);
+    Util u = new Util() {};
+    Map<String, ClassNode> classes = u.parseClasses(input);
+    Set<String> dirtyClasses = new HashSet<>();
+
+    new InnerClassDetector().detect(classes, dirtyClasses);
+    new EnumSwitchClassDetector().restoreMeta(classes, dirtyClasses);
+
+    if(dirtyClasses.isEmpty()) return;
+    try(FileSystem fs = u.createFS(output)) {
+      for(String dirtyClass : dirtyClasses) {
+        ClassWriter writer = new ClassWriter(0);
+        classes.get(dirtyClass).accept(writer);
+        Files.write(fs.getPath("/" + dirtyClass + ".class"), writer.toByteArray());
+      }
+    }
   }
 
   private static Predicate<FieldNode> isNonSynPrivFieldOfDesc(String desc) {
@@ -164,19 +187,19 @@ public class InnerClassDetector implements Util {
     return true;
   }
 
-  public void detect(Path input) throws IOException {
+  public void detect(Map<String, ClassNode> classes, Set<String> dirtyClasses) throws IOException {
     // the set of all classes, mapped by their respective name
-    final Map<String, ClassNode> classes = parseClasses(input);
     // a set of all synthetic field names for each class name
     final Map<String, Set<String>> synFields = new HashMap<>();
     final Map<String, Set<Tuple2<String, String>>> staticAccessors = new HashMap<>();
     final Map<String, Set<Tuple2<String, String>>> instanceAccessors = new HashMap<>();
-    final Map<String, Integer> instanceInvocations = new HashMap<>();
     final Map<String, Set<String>> instanceClasses = new HashMap<>();
-    final Map<String, Set<String>> anonInnerClasses = new HashMap<>();
+    final Map<String, Map<Tuple2<String, String>, Set<String>>> anons = new HashMap<>();
+    final Map<String, Set<String>> nonAnons = new HashMap<>();
+    final Map<String, String> reverseOuterLookup = new HashMap<>();
 
     classes.values().forEach(cn -> {
-      // skip synthetic classes, they'd ideally be checked for enum switches, TODO: Merge
+      // skip synthetic classes, they can be checked for enum switches with EnumSwitchClassDetector
       if((cn.access & ACC_SYNTHETIC) != 0) return;
       // Enums can never be instance inner classes, so we just skip them
       if(!cn.superName.equals("java/lang/Enum")) cn.fields.stream()
@@ -215,11 +238,8 @@ public class InnerClassDetector implements Util {
             return;
           }
           String outerName = argTypes[0].getInternalName();
-          if(synFields.get(cn.name).size() > 1) getOrPut(anonInnerClasses, outerName, new HashSet<>()).add(cn.name);
-          else {
-            getOrPut(instanceClasses, outerName, new HashSet<>()).add(cn.name);
-            instanceInvocations.put(cn.name, 0);
-          }
+          getOrPut(instanceClasses, outerName, new HashSet<>()).add(cn.name);
+          reverseOuterLookup.put(cn.name, outerName);
         }
         String retDesc = mn.desc.substring(mn.desc.lastIndexOf(')') + 1);
         Type[] argTypes = Type.getArgumentTypes(mn.desc);
@@ -263,34 +283,112 @@ public class InnerClassDetector implements Util {
           getOrPut(staticAccessors, cn.name, new HashSet<>()).add(new Tuple2<>(mn.name, mn.desc));
       });
     });
-    System.out.println("anonInnerClasses: " + anonInnerClasses);
-    System.out.println("instanceClasses " + instanceClasses);
 
-    Set<String> instanceClassSet = instanceClasses.values().stream().flatMap(Set::stream).collect(Collectors.toSet());
-
-    classes.values().forEach(cn -> {
-
-      cn.methods.forEach(mn -> {
-        for(AbstractInsnNode ain : mn.instructions) {
-          if(ain instanceof MethodInsnNode) {
-            MethodInsnNode min = (MethodInsnNode) ain;
-            String owner = min.owner;
-            if(instanceClassSet.contains(owner)) instanceInvocations.put(owner, instanceInvocations.get(owner) + 1);
+    instanceClasses.values().stream().flatMap(Set::stream).forEach(name -> {
+      String outer = reverseOuterLookup.get(name);
+      MethodNode outerMethod = null;
+      for(ClassNode cn : classes.values()) {
+        if(cn.name.equals(name)) continue;
+        for(MethodNode m : cn.methods) {
+          Tuple2<AnonRef, String> tup = getRefType(m, name);
+          switch(tup._1) {
+            case DISQUALIFYING:
+              System.out.println("Class " + name + " cannot be anonymous: " + tup._2);
+              getOrPut(nonAnons, outer, new HashSet<>()).add(name);
+              return;
+            case LEGAL:
+              if(outerMethod != null) {
+                System.out.println("Class " + name + " is referenced from more than one method. It cannot be anonymous.");
+                getOrPut(nonAnons, outer, new HashSet<>()).add(name);
+                return;
+              }
+              outerMethod = m;
+              break;
           }
         }
+      }
+      if(outerMethod == null) {
+        System.out.println("Class " + name + " is never used. It cannot be anonymous.");
+        getOrPut(nonAnons, outer, new HashSet<>()).add(name);
+      } else {
+        getOrPut(getOrPut(anons, outer, new HashMap<>()), new Tuple2<>(outerMethod.name, outerMethod.desc), new HashSet<>()).add(name);
+      }
+    });
+
+    System.out.println("Anons: " + anons);
+    System.out.println("Safe NonAnons: " + nonAnons);
+
+    anons.forEach((outer, method2Inners) -> {
+      dirtyClasses.add(outer);
+      ClassNode outerNode = classes.get(outer);
+      method2Inners.forEach((method, inners) -> {
+        inners.forEach(inner -> {
+          dirtyClasses.add(inner);
+          ClassNode innerNode = classes.get(inner);
+          InnerClassNode icn = new InnerClassNode(inner, null, null, 0);
+          outerNode.innerClasses.add(icn);
+          innerNode.innerClasses.add(icn);
+          innerNode.outerMethod = method._1;
+          innerNode.outerMethodDesc = method._2;
+          innerNode.outerClass = outer;
+        });
       });
     });
-    System.out.println(instanceInvocations);
-  }
-
-  private static boolean isSamePackage(String c1, String c2) {
-    if(!c1.contains("/")) return !c2.contains("/");
-    return c2.contains("/") &&
-        c1.substring(0, c1.lastIndexOf('/')).equals(c2.substring(0, c2.lastIndexOf('/')));
+    nonAnons.forEach((outer, inners) -> {
+      dirtyClasses.add(outer);
+      ClassNode outerNode = classes.get(outer);
+      inners.forEach(inner -> {
+        dirtyClasses.add(inner);
+        ClassNode innerNode = classes.get(inner);
+        String innerSimpleName = inner.contains("$") ? inner.substring(inner.lastIndexOf('$') + 1)
+            : inner.contains("/") ? inner.substring(inner.lastIndexOf('/') + 1) : inner; // fallback for obfuscated classes
+        InnerClassNode icn = new InnerClassNode(inner, outer, innerSimpleName, innerNode.access & 0b11);
+        outerNode.innerClasses.add(icn);
+        innerNode.innerClasses.add(icn);
+      });
+    });
   }
 
   private static boolean isLoadInsn(int opCode) {
     return opCode >= ILOAD && opCode <= ALOAD;
+  }
+
+  private static Tuple2<AnonRef, String> getRefType(MethodNode mn, String cName) {
+    boolean hasNew = false;
+    boolean otherRefs = false;
+    for(AbstractInsnNode ain : mn.instructions) {
+      switch(ain.getType()) {
+        case AbstractInsnNode.TYPE_INSN:
+          if(!cName.equals(((TypeInsnNode) ain).desc)) continue;
+          if(ain.getOpcode() == NEW)
+            if(hasNew) return new Tuple2<>(AnonRef.DISQUALIFYING, "Class was instantiated twice");
+          else hasNew = true;
+          else return new Tuple2<>(AnonRef.DISQUALIFYING, "Cannot create arrays of or cast to anon classes");
+          break;
+        case AbstractInsnNode.FIELD_INSN:
+          if(cName.equals(((FieldInsnNode) ain).owner))
+            if(otherRefs) return new Tuple2<>(AnonRef.DISQUALIFYING, "An anonymous class may only be referenced once after creation");
+            else otherRefs = true;
+          break;
+        case AbstractInsnNode.INVOKE_DYNAMIC_INSN: // TODO: Handle this. MC Classic is java 5, so dont hurry :D
+          break;
+        case AbstractInsnNode.METHOD_INSN:
+          MethodInsnNode min = (MethodInsnNode) ain;
+          if(cName.equals(min.owner) && !"<init>".equals(min.name))
+            if(otherRefs) return new Tuple2<>(AnonRef.DISQUALIFYING, "An anonymous class may only be referenced once after creation");
+            else otherRefs = true;
+          break;
+        case AbstractInsnNode.MULTIANEWARRAY_INSN:
+          String desc = ((MultiANewArrayInsnNode)ain).desc;
+          if(desc.contains(";") && cName.equals(desc.substring(desc.lastIndexOf('[' + 2), desc.length() - 1))) // Strip leading '['s, 'L' and trailing ';'
+            return new Tuple2<>(AnonRef.DISQUALIFYING, "Cannot create arrays of anonymous classes");
+          break;
+        default:
+      }
+    }
+    return hasNew ? new Tuple2<>(AnonRef.LEGAL, "") :
+        otherRefs ? new Tuple2<>(AnonRef.DISQUALIFYING, "Class is acted upon without creating an ad-hoc instance") :
+            new Tuple2<>(AnonRef.NONE, "");
   }
 
   private static boolean argTypeIsntReturnType(String argType, String returnType) {
