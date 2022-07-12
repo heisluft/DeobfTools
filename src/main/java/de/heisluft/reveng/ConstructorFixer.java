@@ -49,35 +49,33 @@ public class ConstructorFixer implements Util {
    */
   private byte[] transformClassNode(byte[] bytes, Map<String, ClassNode> classCache) {
     ClassNode cn = parseBytes(bytes);
-    // Instance Inner Classes should not have their constructor data shuffled
-    // The code is left in place for classes whose data was not restored
-    if(Util.hasNone(cn.access, ACC_STATIC) && cn.innerClasses.stream().noneMatch(icn -> icn.name.equals(cn.name))) {
-      for(MethodNode m : cn.methods) {
-        if(!m.name.equals("<init>")) continue;
-        int i;
-        for(i = 0; i < m.instructions.size(); i++) {
-          AbstractInsnNode ain = m.instructions.get(i);
-          if(ain instanceof VarInsnNode && ((VarInsnNode) ain).var == 0) {
-            if(ain.getNext().getOpcode() == Opcodes.INVOKESPECIAL) {
-              MethodInsnNode min = ((MethodInsnNode) ain.getNext());
-              if(min.owner.equals(cn.superName) && min.desc.equals("()V")) break;
-            }
+    for(MethodNode m : cn.methods) {
+      if(!m.name.equals("<init>")) continue;
+      int i;
+      for(i = 0; i < m.instructions.size(); i++) {
+        AbstractInsnNode ain = m.instructions.get(i);
+        if(ain instanceof VarInsnNode && ((VarInsnNode) ain).var == 0) {
+          if(ain.getNext().getOpcode() == Opcodes.INVOKESPECIAL) {
+            MethodInsnNode min = ((MethodInsnNode) ain.getNext());
+            if(min.owner.equals(cn.superName) && min.desc.equals("()V")) break;
           }
         }
-        if(i == 0 || i == m.instructions.size()) return bytes;
-        System.out.println(
-            "Fixing Class: " + cn.name + " (extending " + cn.superName + ") super call offset: " + i);
-        // super call is not first
-        AbstractInsnNode aload0 = m.instructions.get(i);
-        m.instructions.remove(aload0);
-        AbstractInsnNode ivsp = m.instructions.get(i);
-        m.instructions.remove(ivsp);
-        m.instructions.insert(ivsp);
-        m.instructions.insert(aload0);
-        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
-        cn.accept(cw);
-        return cw.toByteArray();
       }
+      if(i == 0 || i == m.instructions.size()) return bytes;
+      // Instance Inner Classes should not have their constructor data shuffled
+      // The code is left in place for classes whose data was not restored
+      if(Util.hasNone(cn.access, ACC_STATIC) && cn.innerClasses.stream().anyMatch(icn -> icn.name.equals(cn.name))) return bytes;
+      System.out.println("Fixing Class: " + cn.name + " (extending " + cn.superName + ") super call offset: " + i);
+      // super call is not first
+      AbstractInsnNode aload0 = m.instructions.get(i);
+      m.instructions.remove(aload0);
+      AbstractInsnNode ivsp = m.instructions.get(i);
+      m.instructions.remove(ivsp);
+      m.instructions.insert(ivsp);
+      m.instructions.insert(aload0);
+      ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+      cn.accept(cw);
+      return cw.toByteArray();
     }
 
     ClassNode superNode = classCache.get(cn.superName);
