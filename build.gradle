@@ -6,9 +6,9 @@ plugins {
 }
 
 group 'de.heisluft.reveng'
-version '0.0.4'
+version '0.0.5'
 
-sourceCompatibility = targetCompatibility = JavaVersion.VERSION_1_8
+java.toolchain.languageVersion.set(JavaLanguageVersion.of(8))
 
 task sourcesJar(type: Jar, dependsOn: classes) {
     archiveClassifier.set 'sources'
@@ -23,7 +23,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'org.ow2.asm:asm-tree:9.2'
+    implementation 'org.ow2.asm:asm-tree:9.3'
     implementation 'de.heisluft:futile:1.1.0'
 }
 
