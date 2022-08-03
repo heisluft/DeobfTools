@@ -7,6 +7,7 @@ import org.objectweb.asm.tree.ClassNode;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -20,6 +21,11 @@ import static de.heisluft.function.FunctionalUtil.thr;
  * This Interface provides convenience methods to its implementors
  */
 public interface Util {
+  /**
+   * A singleton Map mapping "create" -> "true", used as arguments for the file system creation within createFS;
+   */
+  Map<String, String> PROPS = Collections.singletonMap("create", "true");
+
   /**
    * Returns if a given value has none of the given flags. For each flag {@code (value & flag) !=
    * flag} must hold true
@@ -50,10 +56,11 @@ public interface Util {
    *     if the FileSystem could not be created
    */
   default FileSystem createFS(Path path) throws IOException {
-    Map<String, String> map = new HashMap<>(1);
-    map.put("create", "true");
-    URI uri = URI.create("jar:file:/" + path.toAbsolutePath().toString().replace('\\', '/'));
-    return FileSystems.newFileSystem(uri, map);
+    try {
+      return FileSystems.newFileSystem(new URI("jar", path.toAbsolutePath().toUri().toString(), null), PROPS);
+    } catch (URISyntaxException ex) {
+      throw new AssertionError("A pre-validated uri is invalid?????", ex);
+    }
   }
 
   /**
