@@ -193,7 +193,7 @@ public class InnerClassDetector implements Util {
     return true;
   }
 
-  public void detect(Map<String, ClassNode> classes, Set<String> dirtyClasses) throws IOException {
+  public void detect(Map<String, ClassNode> classes, Set<String> dirtyClasses) {
     // the set of all classes, mapped by their respective name
     // a set of all synthetic field names for each class name
     final Map<String, Set<String>> synFields = new HashMap<>();
