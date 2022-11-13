@@ -458,7 +458,7 @@ public class ExceptionMapper implements Util {
      * @param caughtExceptions
      * @return
      */
-    private boolean isSignificant(String exDesc, List<String> caughtExceptions) {
+    private static boolean isSignificant(String exDesc, List<String> caughtExceptions) {
       if(exDesc.equals("null")) return false;
       String exType = exDesc.substring(1, exDesc.length() - 1);
       if(caughtExceptions.stream().filter(Objects::nonNull).anyMatch(ex-> {
@@ -492,6 +492,7 @@ public class ExceptionMapper implements Util {
      * @return
      */
     static Class<?> resolveClass(String desc) {
+      if(desc == null) return null;
       //Class.forName is weird, so we need to transform reference types
       String clsName = (desc.startsWith("L") && desc.endsWith(";") ? desc.substring(1, desc.length() - 1) : desc).replace('/', '.');
       if(classCache.containsKey(clsName)) return classCache.get(clsName);
