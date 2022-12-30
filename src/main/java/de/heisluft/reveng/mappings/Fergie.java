@@ -56,7 +56,7 @@ import java.util.stream.Stream;
  * As Fergie mappings are unique renamings can be done by simple string replacements without having
  * to lex and parse java source files (they may not even be parsable for certain errors).
  */
-public class Fergie implements Util, MappingsProvider {
+public class Fergie implements Util, MappingsHandler {
   /**
    * A singleton instance is used for parsing and writing mappings.
    * Generating mappings is stateful so a new instance is needed everytime for that job
@@ -197,6 +197,11 @@ public class Fergie implements Util, MappingsProvider {
     return mappings;
   }
 
+  @Override
+  public String fileExt() {
+    return "frg";
+  }
+
   /**
    * Generates enum method descriptors for a given class (namely the valueOf and values methods)
    *
@@ -210,18 +215,8 @@ public class Fergie implements Util, MappingsProvider {
     return Stream.of("values()[L" + clsName + ";", "valueOf(Ljava/lang/String;)L" + clsName + ";");
   }
 
-  /**
-   * Writes Mappings in frg file format to path.
-   *
-   * @param mappings
-   *     the mappings to serialize
-   * @param to
-   *     the path to write to
-   *
-   * @throws IOException
-   *     If the path could not be written to
-   */
-  void writeMappings(Mappings mappings, Path to) throws IOException {
+  @Override
+  public void writeMappings(Mappings mappings, Path to) throws IOException {
     List<String> lines = new ArrayList<>();
     mappings.classes.forEach((k, v) -> lines.add("CL: " + k + " " + v));
     mappings.fields.forEach((clsName, map) -> map.forEach((obfFd, deobfFd) -> lines.add("FD: " + clsName + " " + obfFd + " " + deobfFd)));
@@ -249,8 +244,8 @@ public class Fergie implements Util, MappingsProvider {
    * @throws IOException
    *     if the jar file could not be read correctly
    */
-  //TODO: Don't emit mappings for anonymous classes, or rename them with the typical $1 suffix
-  Mappings generateMappings(Path input, List<String> ignored) throws IOException {
+  //TODO: Add a way to add to metadata provided mappings (parse them)
+  public Mappings generateMappings(Path input, List<String> ignored) throws IOException {
     Mappings mappings = new Mappings();
     if(!Files.isRegularFile(input)) throw new FileNotFoundException(input.toString());
     if(!Files.isReadable(input)) throw new IOException("Cannot read from " + input);
@@ -316,8 +311,7 @@ public class Fergie implements Util, MappingsProvider {
               if("<init>".equals(mn.name)) {
                 if(!mappings.exceptions.containsKey(cn.name + mn.name + mn.desc)) return;
                 mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(new Tuple2<>(mn.name, mn.desc), mn.name);
-            } else
-              mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(new Tuple2<>(mn.name, mn.desc), "md_" + methodCounter.getAndIncrement() + "_" + mn.name);
+            } else mappings.methods.computeIfAbsent(cn.name, s -> new HashMap<>()).put(new Tuple2<>(mn.name, mn.desc), "md_" + methodCounter.getAndIncrement() + "_" + mn.name);
           });
         });
     return mappings;

@@ -6,12 +6,9 @@ import de.heisluft.reveng.Util;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
 
 /**
  * RGS Files are mappings for RetroGuard.
@@ -22,21 +19,17 @@ import java.util.function.Function;
  * We only parse in the former.
  *
  */
-public class RGSMappingsProvider implements MappingsProvider, Util {
+public class RGSMappingsHandler implements MappingsHandler, Util {
 
   /**
    * A singleton instance is used for parsing mappings.
    */
-  static final RGSMappingsProvider INSTANCE = new RGSMappingsProvider();
+  static final RGSMappingsHandler INSTANCE = new RGSMappingsHandler();
 
-  /**
-   * A function to join a string tuple, prepending a prefix and inserting a delimiter in between.
-   * @param prefix the prefix to prepend
-   * @param delim the delimiter to insert
-   * @return the joined String
-   */
-  private Function<Tuple2<String, String>,String> join(String prefix, String delim) {
-    return tuple -> prefix + tuple._1 + delim + tuple._2;
+
+  @Override
+  public String fileExt() {
+    return "rgs";
   }
 
   @Override

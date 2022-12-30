@@ -1,7 +1,9 @@
 package de.heisluft.reveng;
 
+import de.heisluft.reveng.mappings.Fergie;
 import de.heisluft.reveng.mappings.Mappings;
-import de.heisluft.reveng.mappings.MappingsInterface;
+import de.heisluft.reveng.mappings.MappingsHandlers;
+import de.heisluft.reveng.mappings.MappingsHandler;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.Opcodes;
@@ -122,28 +124,30 @@ public class Remapper implements Util {
     try {
       Path inputPath = Paths.get(args[1]);
       Path mappingsPath = Paths.get(args[2]);
+      MappingsHandler frgProvider = MappingsHandlers.findHandler("frg");
+      MappingsHandler firstProv = MappingsHandlers.findFileHandler(args[1]);
       switch(action) {
         case "cleanMappings":
-          MappingsInterface.writeFergieMappings(MappingsInterface.findProvider(args[1]).parseMappings(inputPath).clean(), mappingsPath);
+          frgProvider.writeMappings(firstProv.parseMappings(inputPath).clean(), mappingsPath);
           break;
         case "genMediatorMappings":
-          Mappings a2b = MappingsInterface.findProvider(args[1]).parseMappings(inputPath);
-          Mappings a2c = MappingsInterface.findProvider(args[2]).parseMappings(mappingsPath);
-          MappingsInterface.writeFergieMappings(a2b.generateMediatorMappings(a2c), outPath);
+          Mappings a2b = firstProv.parseMappings(inputPath);
+          Mappings a2c = MappingsHandlers.findFileHandler(args[2]).parseMappings(mappingsPath);
+          frgProvider.writeMappings(a2b.generateMediatorMappings(a2c), outPath);
           break;
         case "genConversionMappings":
-          a2b = MappingsInterface.findProvider(args[1]).parseMappings(inputPath);
-          Mappings b2c = MappingsInterface.findProvider(args[2]).parseMappings(mappingsPath);
-          MappingsInterface.writeFergieMappings(a2b.generateConversionMethods(b2c), outPath);
+          a2b = firstProv.parseMappings(inputPath);
+          Mappings b2c = MappingsHandlers.findFileHandler(args[2]).parseMappings(mappingsPath);
+          frgProvider.writeMappings(a2b.generateConversionMethods(b2c), outPath);
           break;
         case "remap":
           new Remapper().remapJar(inputPath, mappingsPath, outPath, ignoredPaths);
           break;
         case "genReverseMappings":
-          MappingsInterface.writeFergieMappings(MappingsInterface.findProvider(args[1]).parseMappings(inputPath).generateReverseMappings(), mappingsPath);
+          frgProvider.writeMappings(firstProv.parseMappings(inputPath).generateReverseMappings(), mappingsPath);
           break;
         default:
-          MappingsInterface.writeFergieMappings(MappingsInterface.generateMappings(inputPath, ignoredPaths), mappingsPath);
+          frgProvider.writeMappings(new Fergie().generateMappings(inputPath, ignoredPaths), mappingsPath);
           break;
       }
     } catch(IOException e) {
@@ -197,7 +201,7 @@ public class Remapper implements Util {
 
   private void remapJar(Path inputPath, Path mappingsPath, Path outputPath, List<String> ignorePaths) throws IOException {
     classNodes.putAll(parseClasses(inputPath, ignorePaths));
-    Mappings mappings = MappingsInterface.findProvider(mappingsPath.toString()).parseMappings(mappingsPath);
+    Mappings mappings = MappingsHandlers.findFileHandler(mappingsPath.toString()).parseMappings(mappingsPath);
     classNodes.values().forEach(node -> {
           node.methods.forEach(mn -> {
             if(isSynthetic(mn.access) && !Type.getInternalName(Enum.class).equals(node.superName) && (mn.access & Opcodes.ACC_BRIDGE) == Opcodes.ACC_BRIDGE) {

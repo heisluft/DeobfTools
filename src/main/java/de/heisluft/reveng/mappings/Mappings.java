@@ -10,30 +10,57 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * WIP API
- * <br>
  * Mappings act as an interface for remappers of all kinds. They store information about renamed
  * methods, class names, and field names as well as lists of exceptions associated with methods.
+ * <br>
+ * Mappings are considered to be immutable, as there is no API exposing mutable data.
+ * To create Mappings from outside the package, use {@link MappingsBuilder} instances.
  */
 public class Mappings {
   /**
    * All Class mappings, names are jvm names ('/' as delimiter) mapped as follows: classMame ->
    * remappedClassName
    */
-  final Map<String, String> classes = new HashMap<>();
+  protected final Map<String, String> classes = new HashMap<>();
   /**
    * All field mappings mapped as follows: className -> fieldName -> remappedName
    */
-  final Map<String, Map<String, String>> fields = new HashMap<>();
+  protected final Map<String, Map<String, String>> fields = new HashMap<>();
   /**
    * All method mappings mapped as follows: className -> (methodName + methodDesc) -> remappedName
    */
-  final Map<String, Map<Tuple2<String, String>, String>> methods = new HashMap<>();
+  protected final Map<String, Map<Tuple2<String, String>, String>> methods = new HashMap<>();
   /**
    * All exceptions added with the mappings, mapped as follows: className + methodName + methodDesc
    * -> list of exception class names exception class names may or may not be already remapped
    */
-  final Map<String, List<String>> exceptions = new HashMap<>();
+  protected final Map<String, List<String>> exceptions = new HashMap<>();
+
+  /**
+   * Mappings are not to be instantiated outside the Package, use {@link MappingsBuilder#build()}
+   */
+  protected Mappings() {}
+
+  /**
+   * Clone the given mappings. Values are deep-cloned, as the backing Maps are often mutable.
+   *
+   * @param toClone the mappings t
+   */
+  protected Mappings(Mappings toClone) {
+    classes.putAll(toClone.classes);
+    toClone.fields.forEach((k,v) -> {
+      fields.put(k, new HashMap<>());
+      fields.get(k).putAll(v);
+    });
+    toClone.methods.forEach((k,v) -> {
+      methods.put(k, new HashMap<>());
+      methods.get(k).putAll(v);
+    });
+    toClone.exceptions.forEach((k,v) -> {
+      exceptions.put(k, new ArrayList<>());
+      exceptions.get(k).addAll(v);
+    });
+  }
 
   /**
    * Retrieves a mapped name for a given class, giving back the className as fallback Use in
@@ -203,7 +230,7 @@ public class Mappings {
     Mappings mappings = new Mappings();
     classes.keySet().forEach(key -> {
       if(!classes.get(key).equals(other.classes.get(key)))
-      mappings.classes.put(classes.get(key), other.classes.get(key));
+        mappings.classes.put(classes.get(key), other.classes.get(key));
     });
     fields.keySet().forEach(key -> {
       if(!other.fields.containsKey(key)) return;
@@ -252,6 +279,31 @@ public class Mappings {
           resultingNames.put(nameDescTuple, otherNameMap.getOrDefault(new Tuple2<>(renamed, Remapper.INSTANCE.remapDescriptor(nameDescTuple._2, this)), renamed))
       );
       mappings.methods.put(className, resultingNames);
+    });
+    return mappings;
+  }
+
+  /**
+   * Generates Mappings that join both the entries of this and other. Where entries clash, the entries of these mappings
+   * take precedence over the entries of {@code other}.
+   *
+   * @param other the secondary "supplementary" mappings
+   * @return the composite mappings
+   */
+  public Mappings join(Mappings other) {
+    Mappings mappings = new Mappings(other);
+    mappings.classes.putAll(classes);
+    fields.forEach((k,v) -> {
+      if(!mappings.fields.containsKey(k)) mappings.fields.put(k, new HashMap<>());
+      mappings.fields.get(k).putAll(v);
+    });
+    methods.forEach((k,v) -> {
+      if(!mappings.methods.containsKey(k)) mappings.methods.put(k, new HashMap<>());
+      mappings.methods.get(k).putAll(v);
+    });
+    exceptions.forEach((k,v) -> {
+      if(!mappings.exceptions.containsKey(k)) mappings.exceptions.put(k, new ArrayList<>());
+      mappings.exceptions.get(k).addAll(v);
     });
     return mappings;
   }
