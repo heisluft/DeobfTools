@@ -57,11 +57,6 @@ import java.util.stream.Stream;
  * to lex and parse java source files (they may not even be parsable for certain errors).
  */
 public class Fergie implements Util, MappingsHandler {
-  /**
-   * A singleton instance is used for parsing and writing mappings.
-   * Generating mappings is stateful so a new instance is needed everytime for that job
-   */
-  static final Fergie INSTANCE = new Fergie();
 
   private static final int FRG_MAPPING_TYPE_INDEX = 0;
   private static final int FRG_ENTITY_CLASS_NAME_INDEX = 1;

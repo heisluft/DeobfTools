@@ -40,8 +40,6 @@ public final class MappingsHandlers {
    */
   private static void checkInit() {
     if (hasFetched) return;
-    HANDLERS.put("frg", Fergie.INSTANCE);
-    HANDLERS.put("rgs", RGSMappingsHandler.INSTANCE);
     ServiceLoader.load(MappingsHandler.class).forEach(m -> HANDLERS.put(m.fileExt(), m));
     hasFetched = true;
   }

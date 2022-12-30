@@ -21,12 +21,6 @@ import java.util.List;
  */
 public class RGSMappingsHandler implements MappingsHandler, Util {
 
-  /**
-   * A singleton instance is used for parsing mappings.
-   */
-  static final RGSMappingsHandler INSTANCE = new RGSMappingsHandler();
-
-
   @Override
   public String fileExt() {
     return "rgs";
