@@ -5,7 +5,7 @@ plugins {
     id 'maven-publish'
 }
 
-group 'de.heisluft.reveng'
+group 'de.heisluft.deobf.tooling'
 version '0.0.6'
 
 java.toolchain.languageVersion.set(JavaLanguageVersion.of(8))
@@ -23,7 +23,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'org.ow2.asm:asm-tree:9.3'
+    implementation 'org.ow2.asm:asm-tree:9.4'
     implementation 'de.heisluft:futile:1.1.0'
 }
 
