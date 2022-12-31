@@ -14,8 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.function.Predicate;
-
-import static de.heisluft.function.FunctionalUtil.thr;
+import java.util.stream.Stream;
 
 /**
  * This Interface provides convenience methods to its implementors
@@ -87,19 +86,16 @@ public interface Util {
    */
   default Map<String, ClassNode> parseClasses(Path path, List<String> ignored) throws IOException {
     Map<String, ClassNode> result = new HashMap<>();
-    try(FileSystem fs = createFS(path)) {
-      Files.walk(fs.getPath("/"))
-          .filter(this::hasClassExt)
-          .filter(p -> ignored.stream().noneMatch(p.toString()::startsWith))
-          .map(p -> {
-            try {
-              return this.parseClass(p);
-            } catch (IOException e) {
-              throw new UncheckedIOException(e);
-            }
-          }).forEach(c -> result.put(c.name, c));
+    try(FileSystem fs = createFS(path); Stream<Path> stream = Files.walk(fs.getPath("/"))) {
+      stream.filter(this::hasClassExt).filter(p -> ignored.stream().noneMatch(p.toString()::startsWith)).map(p -> {
+        try {
+          return this.parseClass(p);
+        } catch (IOException e) {
+          throw new UncheckedIOException(e);
+        }
+      }).forEach(c -> result.put(c.name, c));
     } catch (UncheckedIOException e) {
-      throw e.getCause(); // rethrow the lambdas IOException
+      throw new IOException(e.getCause()); // rethrow the lambdas IOException
     }
     return result;
   }
