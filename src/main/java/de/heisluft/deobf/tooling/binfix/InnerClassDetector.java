@@ -5,18 +5,10 @@ import de.heisluft.function.Tuple2;
 
 import static org.objectweb.asm.Opcodes.*;
 
-import de.heisluft.deobf.tooling.mappings.Mappings;
 import de.heisluft.deobf.tooling.mappings.MappingsBuilder;
-import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 
-import java.io.IOException;
-import java.nio.file.FileSystem;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -43,39 +35,6 @@ public class InnerClassDetector implements Util, MappingsProvider {
   }
 
   private static final int NONE = -1, INSTANCE = 0, STATIC = 1;
-
-  public static void main(String[] args) throws IOException {
-    System.out.println("Class Heuristics for Outer-Inner Relationships - Project CHOIR\n");
-
-    if(args.length < 2) {
-      System.out.println("Usage InnerClassDetector <input> <output>");
-      return;
-    }
-
-    Path input = Paths.get(args[0]);
-    Path output = Paths.get(args[1]);
-
-    Files.copy(input, output, StandardCopyOption.REPLACE_EXISTING);
-    Util u = new Util() {};
-    Map<String, ClassNode> classes = u.parseClasses(input);
-    Set<String> dirtyClasses = new HashSet<>();
-
-    InnerClassDetector icd = new InnerClassDetector();
-    icd.setBuilder(new MappingsBuilder());
-    icd.detect(classes, dirtyClasses);
-    EnumSwitchClassDetector escd = new EnumSwitchClassDetector();
-    escd.setBuilder(icd.getBuilder());
-    escd.restoreMeta(classes, dirtyClasses);
-    Mappings outMappings = escd.getBuilder().build();
-    if(dirtyClasses.isEmpty()) return;
-    try(FileSystem fs = u.createFS(output)) {
-      for(String dirtyClass : dirtyClasses) {
-        ClassWriter writer = new ClassWriter(0);
-        classes.get(dirtyClass).accept(writer);
-        Files.write(fs.getPath("/" + dirtyClass + ".class"), writer.toByteArray());
-      }
-    }
-  }
 
   private static Predicate<FieldNode> isNonSynPrivFieldOfDesc(String desc) {
     return fn -> (fn.access & ACC_SYNTHETIC) == 0 && (fn.access & ACC_PRIVATE) != 0 && fn.desc.equals(desc);

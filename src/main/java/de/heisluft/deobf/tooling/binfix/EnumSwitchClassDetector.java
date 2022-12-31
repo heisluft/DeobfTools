@@ -3,7 +3,6 @@ package de.heisluft.deobf.tooling.binfix;
 import de.heisluft.deobf.tooling.Util;
 import de.heisluft.deobf.tooling.mappings.MappingsBuilder;
 import de.heisluft.stream.BiStream;
-import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
@@ -12,12 +11,6 @@ import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.InnerClassNode;
 import org.objectweb.asm.tree.InsnList;
 
-import java.io.IOException;
-import java.nio.file.FileSystem;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -41,14 +34,6 @@ public class EnumSwitchClassDetector implements Util, MappingsProvider {
   @Override
   public MappingsBuilder getBuilder() {
     return builder;
-  }
-
-  public static void main(String[] args) throws IOException {
-    if(args.length < 2) {
-      System.out.println("Usage EnumSwitchClassDetector <input> <output>");
-      return;
-    }
-    new EnumSwitchClassDetector().restoreMeta(Paths.get(args[0]), Paths.get(args[1]));
   }
 
   /**
@@ -114,30 +99,5 @@ public class EnumSwitchClassDetector implements Util, MappingsProvider {
       dirtyClasses.add(useNode.name);
       dirtyClasses.add(syn);
     });
-  }
-
-  /**
-   * Reads all classes of input,
-   * Restores the Metadata of EnumSwitch lookup classes and their containing classes
-   * and writes the resulting jar to output
-   *
-   * @param input tne input path
-   * @param output the output path
-   * @throws IOException if input could not be read or output could not be written
-   */
-  private void restoreMeta(Path input, Path output) throws IOException {
-    Files.copy(input, output, StandardCopyOption.REPLACE_EXISTING);
-    Map<String, ClassNode> classes = parseClasses(output);
-    Set<String> dirtyClasses = new HashSet<>();
-    restoreMeta(classes, dirtyClasses);
-    if(dirtyClasses.isEmpty()) return;
-    try(FileSystem fs = createFS(output)) {
-      Path root = fs.getPath("/");
-      for(String d : dirtyClasses) {
-        ClassWriter writer = new ClassWriter(0);
-        classes.get(d).accept(writer);
-        Files.write(root.resolve(d + ".class"), writer.toByteArray());
-      }
-    }
   }
 }
