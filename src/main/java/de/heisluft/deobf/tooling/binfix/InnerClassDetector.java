@@ -20,8 +20,24 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+/**
+ * A tool to restore innerclass attributes and inner classes' this$0 field and outer$inner name. As of now, only
+ * instance inner classes are detected, support for static inner classes is planned.
+ * <br>
+ * Mappings for captured local vars in anonymous classes are not generated (as the local variable table was probably
+ * wiped anyway), as are mappings for accessor methods (although support for this is planned).
+ * <br>
+ * The Mappings generated for named inner classes will match the pattern {@code outerClassName + "$" + className}, so
+ * they will have to be revised whenever either the outer class or the inner class is renamed.
+ * <br>
+ * The Mappings generated for anonymous classes will match the pattern {@code outerClassName + "$" + i} where i is the
+ * first positive integer for which a class with a name matching the generated name does not exist.
+ */
+//TODO: Emit mappings for accessor methods
+//TODO: use accessor methods to detect static inner classes
 public class InnerClassDetector implements Util, MappingsProvider {
 
+  /** The mappings builder used in this run. */
   private MappingsBuilder builder;
 
   @Override
@@ -34,12 +50,46 @@ public class InnerClassDetector implements Util, MappingsProvider {
     return builder;
   }
 
-  private static final int NONE = -1, INSTANCE = 0, STATIC = 1;
+  /**
+   * A type of reference to an instance inner class, used to detect whether it was an anonymous class.
+   */
+  private enum AnonRef {
+    /** The class was not referenced at all */
+    NONE,
+    /** The class was referenced in a way that does not disqualify it from being an anonymous class */
+    LEGAL,
+    /** The class was referenced in a way that disqualifies it from being an anonymous class */
+    DISQUALIFYING
+  }
 
+  /**
+   * Class Members can be either static or instance members
+   */
+  private enum AccessType {
+    /** Fields are accessed by getstatic and putstatic, methods by invokestatic */
+    INSTANCE,
+    /** Fields are accessed by getstatic and putstatic, methods by invokespecial, invokeinterface and invokevirtual */
+    STATIC
+  }
+
+  /**
+   * Creates a Predicate checking if a field node is both private and not synthetic, and if its descriptor matches
+   * {@code desc}.
+   * @param desc the descriptor to be checked against
+   * @return the resulting predicate
+   */
   private static Predicate<FieldNode> isNonSynPrivFieldOfDesc(String desc) {
     return fn -> (fn.access & ACC_SYNTHETIC) == 0 && (fn.access & ACC_PRIVATE) != 0 && fn.desc.equals(desc);
   }
 
+  /**
+   * Creates a Predicate checking if a method node is both private and not synthetic, and if its descriptor matches
+   * an accessor descriptor. For instance methods this means that it matches if the first arg of the accessor descriptor
+   * is equals to the class name.
+   *
+   * @param staticDesc the accessor static descriptor to be checked against
+   * @return the resulting predicate
+   */
   private static Predicate<MethodNode> isNonSynPrivMetOfDesc(String staticDesc) {
     String instDesc = null;
     Type[] argTypes = Type.getArgumentTypes(staticDesc);
@@ -54,13 +104,103 @@ public class InnerClassDetector implements Util, MappingsProvider {
                 mn.desc.equals(staticDesc));
   }
 
+  /**
+   * Checks whether a specified instruction is a return instruction of any kind.
+   * @param opcode the instruction OpCode to check
+   * @return {@code true} if opCode denotes a return instruction, {@code false} otherwise
+   */
   private boolean isReturnOpCode(int opcode) {
     return opcode >= IRETURN && opcode <= RETURN;
   }
 
-  private int getMethodAccessType(InsnList insnList, String cName, Set<Tuple2<String, String>> matchedMets) {
+  /**
+   * Checks whether a specified instruction is a load instruction of any kind.
+   * @param opCode the instruction OpCode to check
+   * @return {@code true} if opCode denotes a load instruction, {@code false} otherwise
+   */
+  private static boolean isLoadInsn(int opCode) {
+    return opCode >= ILOAD && opCode <= ALOAD;
+  }
+
+  /**
+   * Checks whether a methods argument type is incompatible to its return type.
+   *
+   * @param argType the methods argument type
+   * @param returnType the methods return type
+   * @return whether a methods argument type is incompatible to its return type.
+   */
+  private static boolean incompatibleReturnType(String argType, String returnType) {
+    if(argType.equals(returnType)) return false;
+    switch(returnType) {
+      case "Z":
+      case "B":
+      case "C":
+      case "S": return !"I".equals(argType);
+      case "Ljava/lang/String;": return !"Ljava/lang/Object;".equals(argType);
+    }
+    return true;
+  }
+
+  /**
+   * Checks how the way a class is referenced within a method qualifies or disqualifies it from being an anonymous class.
+   *
+   * @param mn the method to look into
+   * @param cName the name of the instance inner class
+   * @return a tuple consisting of either LEGAL, QUALIFYING (both with empty strings) or DISQUALIFYING (with the string
+   * holding the reason for disqualification)
+   */
+  private static Tuple2<AnonRef, String> getRefType(MethodNode mn, String cName) {
+    boolean hasNew = false;
+    boolean otherRefs = false;
+    for(AbstractInsnNode ain : mn.instructions) {
+      switch(ain.getType()) {
+        case AbstractInsnNode.TYPE_INSN:
+          if(!cName.equals(((TypeInsnNode) ain).desc)) continue;
+          if(ain.getOpcode() == NEW)
+            if(hasNew) return new Tuple2<>(AnonRef.DISQUALIFYING, "Class was instantiated twice");
+            else hasNew = true;
+          else return new Tuple2<>(AnonRef.DISQUALIFYING, "Cannot create arrays of or cast to anon classes");
+          break;
+        case AbstractInsnNode.FIELD_INSN:
+          if(cName.equals(((FieldInsnNode) ain).owner))
+            if(otherRefs) return new Tuple2<>(AnonRef.DISQUALIFYING, "An anonymous class may only be referenced once after creation");
+            else otherRefs = true;
+          break;
+        case AbstractInsnNode.INVOKE_DYNAMIC_INSN: // TODO: Handle this. MC Classic is java 5, so dont hurry :D
+          break;
+        case AbstractInsnNode.METHOD_INSN:
+          MethodInsnNode min = (MethodInsnNode) ain;
+          if(cName.equals(min.owner) && !"<init>".equals(min.name))
+            if(otherRefs) return new Tuple2<>(AnonRef.DISQUALIFYING, "An anonymous class may only be referenced once after creation");
+            else otherRefs = true;
+          break;
+        case AbstractInsnNode.MULTIANEWARRAY_INSN:
+          String desc = ((MultiANewArrayInsnNode)ain).desc;
+          if(desc.contains(";") && cName.equals(desc.substring(desc.lastIndexOf('[' + 2), desc.length() - 1))) // Strip leading '['s, 'L' and trailing ';'
+            return new Tuple2<>(AnonRef.DISQUALIFYING, "Cannot create arrays of anonymous classes");
+          break;
+        default:
+      }
+    }
+    return hasNew ? new Tuple2<>(AnonRef.LEGAL, "") :
+        otherRefs ? new Tuple2<>(AnonRef.DISQUALIFYING, "Class is acted upon without creating an ad-hoc instance") :
+            new Tuple2<>(AnonRef.NONE, "");
+  }
+
+  /**
+   * Checks a methods for the possibility of being an accessor method.
+   * <br>
+   * NOTE: This matches javac generated accessors. Other compilers may emit other accessors.
+   *
+   * @param insnList the instructions to be checked
+   * @param cName the accessed class name
+   * @param matchedMets a set of Tuples consisting of method names and descriptors
+   * @return {@link AccessType#INSTANCE} if the method could have been an instance accessor,
+   * {@link AccessType#STATIC} if the method could have been a static accessor, or {@code null} if it is neither
+   */
+  private AccessType getMethodAccessType(InsnList insnList, String cName, Set<Tuple2<String, String>> matchedMets) {
     // We found no methods to relay
-    if(matchedMets.isEmpty()) return NONE;
+    if(matchedMets.isEmpty()) return null;
     List<Integer> loadedArgs = new ArrayList<>();
     Boolean staticLock = null;
     for(AbstractInsnNode ain : insnList) {
@@ -73,31 +213,31 @@ public class InnerClassDetector implements Util, MappingsProvider {
       // A method accessor does not branch, break after return
       if(isReturnOpCode(opCode)) break;
       // A method accessor calls only one method, its relay.
-      if(staticLock != null) return NONE;
+      if(staticLock != null) return null;
       if(ain instanceof VarInsnNode) {
         int argNum = ((VarInsnNode) ain).var;
         // We should push each arg only ONCE, ...
-        if(loadedArgs.contains(argNum)) return NONE;
+        if(loadedArgs.contains(argNum)) return null;
         // ...starting at 0, ...
-        if(loadedArgs.isEmpty() && argNum != 0) return NONE;
+        if(loadedArgs.isEmpty() && argNum != 0) return null;
         // ...in order
-        if(!loadedArgs.isEmpty() && loadedArgs.get(loadedArgs.size() - 1) != argNum - 1) return NONE;
+        if(!loadedArgs.isEmpty() && loadedArgs.get(loadedArgs.size() - 1) != argNum - 1) return null;
         loadedArgs.add(argNum);
         continue;
       }
       // A method accessor should only ever relay method calls
       // invokevirtual and invokestatic are the only permitted calls
       if(!(ain instanceof MethodInsnNode) || opCode == INVOKEVIRTUAL || opCode == INVOKEINTERFACE) {
-        return NONE;
+        return null;
       }
       MethodInsnNode min = (MethodInsnNode)ain;
       // Accessors only relay within their own class
-      if(!cName.equals(min.owner)) return NONE;
+      if(!cName.equals(min.owner)) return null;
       // Only private methods have accessors generated
-      if(!matchedMets.contains(new Tuple2<>(min.name, min.desc))) return NONE;
+      if(!matchedMets.contains(new Tuple2<>(min.name, min.desc))) return null;
       staticLock = opCode == INVOKESTATIC;
     }
-    return staticLock == null ? NONE : staticLock ? STATIC : INSTANCE;
+    return staticLock == null ? null : staticLock ? AccessType.STATIC : AccessType.INSTANCE;
   }
 
   /**
@@ -170,6 +310,12 @@ public class InnerClassDetector implements Util, MappingsProvider {
     return true;
   }
 
+  /**
+   * Runs the tool
+   *
+   * @param classes the map of all parsed classes. values will be mutated.
+   * @param dirtyClasses a set of classes to be re-serialized. added to, but never removed from.
+   */
   public void detect(Map<String, ClassNode> classes, Set<String> dirtyClasses) {
     // the set of all classes, mapped by their respective name
     // a set of all synthetic field names for each class name
@@ -227,12 +373,12 @@ public class InnerClassDetector implements Util, MappingsProvider {
         }
         String retDesc = mn.desc.substring(mn.desc.lastIndexOf(')') + 1);
         Type[] argTypes = Type.getArgumentTypes(mn.desc);
-        int methodAccessType = getMethodAccessType(mn.instructions, cn.name,
+        AccessType methodAccessType = getMethodAccessType(mn.instructions, cn.name,
             cn.methods.stream().filter(isNonSynPrivMetOfDesc(mn.desc))
                 .map(match -> new Tuple2<>(match.name, match.desc)).collect(Collectors.toSet())
         );
-        if(methodAccessType != NONE) {
-          if(methodAccessType == STATIC)
+        if(methodAccessType != null) {
+          if(methodAccessType == AccessType.STATIC)
             getOrPut(staticAccessors, cn.name, new HashSet<>()).add(new Tuple2<>(mn.name, mn.desc));
           else
             getOrPut(instanceAccessors, cn.name, new HashSet<>()).add(new Tuple2<>(mn.name, mn.desc));
@@ -252,7 +398,7 @@ public class InnerClassDetector implements Util, MappingsProvider {
         }
         // This coveres all instance accessors
         if(argTypes[0].getInternalName().equals(cn.name)) {
-          if(argTypes.length == 2 && argTypeIsntReturnType(argTypes[1].getDescriptor(), retDesc))
+          if(argTypes.length == 2 && incompatibleReturnType(argTypes[1].getDescriptor(), retDesc))
             return;
           if(isFieldAccessMethod(mn.instructions, cn.name, maybeRetFields))
             getOrPut(instanceAccessors, cn.name, new HashSet<>()).add(new Tuple2<>(mn.name, mn.desc));
@@ -261,7 +407,7 @@ public class InnerClassDetector implements Util, MappingsProvider {
         // Two args require the first to be of the classes type
         if(argTypes.length == 2) return;
         // the last type: static mutating accessors
-        if(argTypeIsntReturnType(argTypes[0].getDescriptor(), retDesc)) return;
+        if(incompatibleReturnType(argTypes[0].getDescriptor(), retDesc)) return;
         if(isFieldAccessMethod(mn.instructions, cn.name, maybeRetFields))
           getOrPut(staticAccessors, cn.name, new HashSet<>()).add(new Tuple2<>(mn.name, mn.desc));
       });
@@ -330,59 +476,5 @@ public class InnerClassDetector implements Util, MappingsProvider {
         innerNode.innerClasses.add(icn);
       });
     });
-  }
-
-  private static boolean isLoadInsn(int opCode) {
-    return opCode >= ILOAD && opCode <= ALOAD;
-  }
-
-  private static Tuple2<AnonRef, String> getRefType(MethodNode mn, String cName) {
-    boolean hasNew = false;
-    boolean otherRefs = false;
-    for(AbstractInsnNode ain : mn.instructions) {
-      switch(ain.getType()) {
-        case AbstractInsnNode.TYPE_INSN:
-          if(!cName.equals(((TypeInsnNode) ain).desc)) continue;
-          if(ain.getOpcode() == NEW)
-            if(hasNew) return new Tuple2<>(AnonRef.DISQUALIFYING, "Class was instantiated twice");
-          else hasNew = true;
-          else return new Tuple2<>(AnonRef.DISQUALIFYING, "Cannot create arrays of or cast to anon classes");
-          break;
-        case AbstractInsnNode.FIELD_INSN:
-          if(cName.equals(((FieldInsnNode) ain).owner))
-            if(otherRefs) return new Tuple2<>(AnonRef.DISQUALIFYING, "An anonymous class may only be referenced once after creation");
-            else otherRefs = true;
-          break;
-        case AbstractInsnNode.INVOKE_DYNAMIC_INSN: // TODO: Handle this. MC Classic is java 5, so dont hurry :D
-          break;
-        case AbstractInsnNode.METHOD_INSN:
-          MethodInsnNode min = (MethodInsnNode) ain;
-          if(cName.equals(min.owner) && !"<init>".equals(min.name))
-            if(otherRefs) return new Tuple2<>(AnonRef.DISQUALIFYING, "An anonymous class may only be referenced once after creation");
-            else otherRefs = true;
-          break;
-        case AbstractInsnNode.MULTIANEWARRAY_INSN:
-          String desc = ((MultiANewArrayInsnNode)ain).desc;
-          if(desc.contains(";") && cName.equals(desc.substring(desc.lastIndexOf('[' + 2), desc.length() - 1))) // Strip leading '['s, 'L' and trailing ';'
-            return new Tuple2<>(AnonRef.DISQUALIFYING, "Cannot create arrays of anonymous classes");
-          break;
-        default:
-      }
-    }
-    return hasNew ? new Tuple2<>(AnonRef.LEGAL, "") :
-        otherRefs ? new Tuple2<>(AnonRef.DISQUALIFYING, "Class is acted upon without creating an ad-hoc instance") :
-            new Tuple2<>(AnonRef.NONE, "");
-  }
-
-  private static boolean argTypeIsntReturnType(String argType, String returnType) {
-    if(argType.equals(returnType)) return false;
-    switch(returnType) {
-      case "Z":
-      case "B":
-      case "C":
-      case "S": return !"I".equals(argType);
-      case "Ljava/lang/String;": return !"Ljava/lang/Object;".equals(argType);
-    }
-    return true;
   }
 }

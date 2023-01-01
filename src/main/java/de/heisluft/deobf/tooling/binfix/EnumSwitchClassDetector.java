@@ -24,6 +24,7 @@ import java.util.Set;
  */
 public class EnumSwitchClassDetector implements Util, MappingsProvider {
 
+  /** The mappings builder used in this run. */
   private MappingsBuilder builder;
 
   @Override

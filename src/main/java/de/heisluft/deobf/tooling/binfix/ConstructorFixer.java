@@ -28,10 +28,8 @@ public class ConstructorFixer implements Util {
   /**
    * Fixes the constructors of non restored inner classes and adds constructors as needed.
    *
-   * @param classes
-   *     all parsed classes mapped by their names, will not be modified
-   * @param dirtyClasses
-   *     the set of dirty class names, only added to, never deleted from
+   * @param classes the map of all parsed classes. values will be mutated.
+   * @param dirtyClasses a set of classes to be re-serialized. added to, but never removed from.
    */
   void fixConstructors(Map<String, ClassNode> classes, Set<String> dirtyClasses) {
     classes.forEach((s, classNode) -> {
@@ -98,6 +96,18 @@ public class ConstructorFixer implements Util {
     return true;
   }
 
+  /**
+   * Creates a constructor MethodNode with the specified signature, relaying all the descriptors args to
+   * a call to the specified superclass constructor
+   *
+   * @param desc
+   *      the descriptor of the constructor
+   * @param superName
+   *      the name of the class to be called within the method
+   * @param superAcc
+   *      the access of the superclass constructor.
+   * @return the resulting MethodNode
+   */
   private MethodNode createConstructor(String desc, String superName, int superAcc) {
     MethodNode node = new MethodNode(superAcc, "<init>", desc, null, null);
     node.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));

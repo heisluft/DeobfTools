@@ -240,6 +240,7 @@ public class Fergie implements Util, MappingsHandler {
    *     if the jar file could not be read correctly
    */
   //TODO: Add a way to add to metadata provided mappings (parse them)
+  //TODO: this is not a Fergie specific task and prevents separating the mappings package. Move it out
   public Mappings generateMappings(Path input, List<String> ignored) throws IOException {
     Mappings mappings = new Mappings();
     if(!Files.isRegularFile(input)) throw new FileNotFoundException(input.toString());
