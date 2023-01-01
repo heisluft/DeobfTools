@@ -1,7 +1,5 @@
 package de.heisluft.deobf.tooling.mappings;
 
-import de.heisluft.function.Tuple2;
-
 import java.util.*;
 
 /**
@@ -69,7 +67,7 @@ public final class MappingsBuilder {
    */
   public void addMethodMapping(String cName, String mName, String mDesc, String rName) {
     if(!mappings.methods.containsKey(cName)) mappings.methods.put(cName, new HashMap<>());
-    mappings.methods.get(cName).put(new Tuple2<>(mName, mDesc), rName);
+    mappings.methods.get(cName).put(new MdMeta(mName, mDesc), rName);
   }
 
   /**
@@ -123,7 +121,7 @@ public final class MappingsBuilder {
    * @return true if there is a mapping for the method, false otherwise
    */
   public boolean hasMethodMapping(String className, String methodName, String methodDescriptor) {
-    return mappings.methods.getOrDefault(className, new HashMap<>()).containsKey(new Tuple2<>(methodName, methodDescriptor));
+    return mappings.methods.getOrDefault(className, new HashMap<>()).containsKey(new MdMeta(methodName, methodDescriptor));
   }
 
   /**

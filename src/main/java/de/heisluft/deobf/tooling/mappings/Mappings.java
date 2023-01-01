@@ -1,8 +1,5 @@
 package de.heisluft.deobf.tooling.mappings;
 
-import de.heisluft.function.Tuple2;
-import de.heisluft.stream.BiStream;
-
 import java.util.*;
 
 /**
@@ -14,9 +11,10 @@ import java.util.*;
  */
 public class Mappings {
 
-  /**All Primitive Names*/
+  /**
+   * All primitive binary names
+   */
   private static final List<String> PRIMITIVES = Arrays.asList("B", "C", "D", "F", "I", "J", "S", "V", "Z");
-
   /**
    * All Class mappings, names are jvm names ('/' as delimiter) mapped as follows: classMame ->
    * remappedClassName
@@ -29,7 +27,7 @@ public class Mappings {
   /**
    * All method mappings mapped as follows: className -> (methodName + methodDesc) -> remappedName
    */
-  protected final Map<String, Map<Tuple2<String, String>, String>> methods = new HashMap<>();
+  protected final Map<String, Map<MdMeta, String>> methods = new HashMap<>();
   /**
    * All exceptions added with the mappings, mapped as follows: className + methodName + methodDesc
    * -> list of exception class names exception class names may or may not be already remapped
@@ -90,7 +88,7 @@ public class Mappings {
    * @return the mapped name or {@code null} if not found
    */
   public String getMethodName(String className, String methodName, String methodDescriptor) {
-    return methods.getOrDefault(className, new HashMap<>()).get(new Tuple2<>(methodName, methodDescriptor));
+    return methods.getOrDefault(className, new HashMap<>()).get(new MdMeta(methodName, methodDescriptor));
   }
 
   /**
@@ -132,7 +130,7 @@ public class Mappings {
    * @return true if there is a mapping for the method, false otherwise
    */
   public boolean hasMethodMapping(String className, String methodName, String methodDescriptor) {
-    return methods.getOrDefault(className, new HashMap<>()).containsKey(new Tuple2<>(methodName, methodDescriptor));
+    return methods.getOrDefault(className, new HashMap<>()).containsKey(new MdMeta(methodName, methodDescriptor));
   }
 
   /**
@@ -180,9 +178,9 @@ public class Mappings {
       mappings.fields.put(getClassName(className), reversedNames);
     });
     methods.forEach((className, nameMap) -> {
-      Map<Tuple2<String, String>, String> reversedNames = new HashMap<>();
+      Map<MdMeta, String> reversedNames = new HashMap<>();
       nameMap.forEach((nameDescTuple, renamed) ->
-        reversedNames.put(new Tuple2<>(renamed, remapDescriptor(nameDescTuple._2)), nameDescTuple._1)
+        reversedNames.put(new MdMeta(renamed, remapDescriptor(nameDescTuple.desc)), nameDescTuple.name)
       );
       mappings.methods.put(getClassName(className), reversedNames);
     });
@@ -196,9 +194,9 @@ public class Mappings {
    */
   public Mappings clean() {
     Mappings mappings = new Mappings();
-    mappings.classes.putAll(BiStream.streamMap(classes).filter(String::equals).toMap());
+    classes.entrySet().stream().filter(e -> e.getKey().equals(e.getValue())).forEach(e -> mappings.classes.put(e.getKey(), e.getValue()));
     fields.forEach((className, map) -> {
-      if(BiStream.streamMap(map).allMatch(String::equals)) return;
+      if(map.entrySet().stream().anyMatch(e -> e.getKey().equals(e.getValue()))) return;
       Map<String, String> values = new HashMap<>();
       map.forEach((fieldName, remappedFieldName) -> {
         if(!fieldName.equals(remappedFieldName)) values.put(fieldName, remappedFieldName);
@@ -206,10 +204,10 @@ public class Mappings {
       mappings.fields.put(className, values);
     });
     methods.forEach((className, map) -> {
-      if(BiStream.streamMap(map).allMatch((tup, s) -> tup._1.equals(s) && !exceptions.containsKey(className + tup._1 + tup._2))) return;
-      Map<Tuple2<String, String>, String> values = new HashMap<>();
+      if(map.entrySet().stream().allMatch(e -> e.getKey().name.equals(e.getValue()) && !exceptions.containsKey(className + e.getKey()))) return;
+      Map<MdMeta, String> values = new HashMap<>();
       map.forEach((tuple, remappedMethodName) -> {
-        if(!tuple._1.equals(remappedMethodName) || exceptions.containsKey(className + tuple._1 + tuple._2)) values.put(tuple, remappedMethodName);
+        if(!tuple.name.equals(remappedMethodName) || exceptions.containsKey(className + tuple.name + tuple.desc)) values.put(tuple, remappedMethodName);
       });
       mappings.methods.put(className, values);
     });
@@ -244,11 +242,11 @@ public class Mappings {
     });
     methods.keySet().forEach(key -> {
       if(!other.methods.containsKey(key)) return;
-      Map<Tuple2<String, String>, String> values = new HashMap<>();
+      Map<MdMeta, String> values = new HashMap<>();
       methods.get(key).forEach((tuple2, renamedMd) -> {
         String toRenamedMd = other.methods.get(key).get(tuple2);
         if(!renamedMd.equals(toRenamedMd))
-          values.put(tuple2.map1(b -> renamedMd).map2(this::remapDescriptor), toRenamedMd);
+          values.put(new MdMeta(renamedMd, remapDescriptor(tuple2.desc)), toRenamedMd);
       });
       mappings.methods.put(getClassName(key), values);
     });
@@ -273,10 +271,10 @@ public class Mappings {
       mappings.fields.put(className, resultingNames);
     });
     methods.forEach((className, nameMap) -> {
-      Map<Tuple2<String, String>, String> otherNameMap = other.methods.getOrDefault(getClassName(className), new HashMap<>());
-      Map<Tuple2<String, String>, String> resultingNames = new HashMap<>();
+      Map<MdMeta, String> otherNameMap = other.methods.getOrDefault(getClassName(className), new HashMap<>());
+      Map<MdMeta, String> resultingNames = new HashMap<>();
       nameMap.forEach((nameDescTuple, renamed) ->
-          resultingNames.put(nameDescTuple, otherNameMap.getOrDefault(new Tuple2<>(renamed, remapDescriptor(nameDescTuple._2)), renamed))
+          resultingNames.put(nameDescTuple, otherNameMap.getOrDefault(new MdMeta(renamed, remapDescriptor(nameDescTuple.desc)), renamed))
       );
       mappings.methods.put(className, resultingNames);
     });

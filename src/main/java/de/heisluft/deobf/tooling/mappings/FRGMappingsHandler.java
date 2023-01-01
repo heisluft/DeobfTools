@@ -1,7 +1,5 @@
 package de.heisluft.deobf.tooling.mappings;
 
-import de.heisluft.function.Tuple2;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,7 +23,7 @@ public final class FRGMappingsHandler implements MappingsHandler {
         String clsName = line[FRG_ENTITY_CLASS_NAME_INDEX];
         String obfName = line[FRG_ENTITY_NAME_INDEX];
         String obfDesc = line[FRG_METHOD_DESCRIPTOR_INDEX];
-        mappings.methods.computeIfAbsent(clsName, s -> new HashMap<>()).put(new Tuple2<>(obfName, obfDesc), line[FRG_MAPPED_METHOD_NAME_INDEX]);
+        mappings.methods.computeIfAbsent(clsName, s -> new HashMap<>()).put(new MdMeta(obfName, obfDesc), line[FRG_MAPPED_METHOD_NAME_INDEX]);
         for(int i = 5; i < line.length; i++)
           mappings.exceptions.computeIfAbsent(clsName + obfName + obfDesc, s -> new HashSet<>()).add(line[i]);
       } else if("FD:".equals(line[FRG_MAPPING_TYPE_INDEX])) {
@@ -53,8 +51,8 @@ public final class FRGMappingsHandler implements MappingsHandler {
     mappings.classes.forEach((k, v) -> lines.add("CL: " + k + " " + v));
     mappings.fields.forEach((clsName, map) -> map.forEach((obfFd, deobfFd) -> lines.add("FD: " + clsName + " " + obfFd + " " + deobfFd)));
     mappings.methods.forEach((clsName, map) -> map.forEach((obfMet, deobfName) -> {
-      StringBuilder line = new StringBuilder("MD: " + clsName + " " + obfMet._1 + " " + obfMet._2 + " " + deobfName);
-      mappings.getExceptions(clsName, obfMet._1, obfMet._2).stream().sorted().forEach(s -> line.append(" ").append(s));
+      StringBuilder line = new StringBuilder("MD: " + clsName + " " + obfMet.name + " " + obfMet.desc + " " + deobfName);
+      mappings.getExceptions(clsName, obfMet.name, obfMet.desc).stream().sorted().forEach(s -> line.append(" ").append(s));
       lines.add(line.toString());
     }));
     lines.sort(Comparator.naturalOrder());

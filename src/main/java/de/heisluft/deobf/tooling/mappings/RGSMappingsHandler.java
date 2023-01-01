@@ -1,7 +1,5 @@
 package de.heisluft.deobf.tooling.mappings;
 
-import de.heisluft.function.Tuple2;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -56,7 +54,7 @@ public final class RGSMappingsHandler implements MappingsHandler {
           if(words.length < 4)
             throw new IllegalArgumentException("Error on line '" + line + "'. Expected at least 3 arguments, got" + (words.length - 1));
           String[] md = splitAt(words[1], words[1].lastIndexOf('/'));
-          mappings.methods.computeIfAbsent(md[0], k -> new HashMap<>()).put(new Tuple2<>(md[1], words[2]), words[3]);
+          mappings.methods.computeIfAbsent(md[0], k -> new HashMap<>()).put(new MdMeta(md[1], words[2]), words[3]);
           break;
       }
     }
