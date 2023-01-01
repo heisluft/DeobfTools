@@ -28,7 +28,7 @@ public class BinFixer {
     }
     Path mappingsOutPath = null;
     if(args.length == 3) {
-      mappingsOutPath = Paths.get(args[2]);
+      mappingsOutPath = Paths.get(args[2]).toAbsolutePath();
       Files.createDirectories(mappingsOutPath.getParent());
     }
     Path input = Paths.get(args[0]);

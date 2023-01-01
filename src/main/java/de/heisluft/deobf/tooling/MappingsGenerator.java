@@ -243,7 +243,7 @@ public class MappingsGenerator implements Util {
     if(!Files.isReadable(input)) throw new IOException("Cannot read from " + input);
     classNodes.putAll(parseClasses(input));
     Set<String> packages = classNodes.values().stream().filter(p -> p.name.contains("/")).map(p -> p.name.substring(0, p.name.lastIndexOf("/"))).collect(Collectors.toSet());
-    classNodes.values().stream().map(n -> n.name).filter(cn -> !builder.hasClassMapping(cn)).forEach(cn -> {
+    classNodes.values().stream().map(n -> n.name).filter(cn -> ignored.stream().noneMatch(("/" + cn)::startsWith)).filter(cn -> !builder.hasClassMapping(cn)).forEach(cn -> {
       String modifiedName = cn;
       // Reserved Words should be escaped automatically
       if(RESERVED_WORDS.contains(modifiedName)) {
@@ -278,7 +278,7 @@ public class MappingsGenerator implements Util {
 
     AtomicInteger fieldCounter = new AtomicInteger(1);
     AtomicInteger methodCounter = new AtomicInteger(1);
-    classNodes.values().stream().filter(c -> ignored.stream().noneMatch(c.name::startsWith)).forEach(cn -> {
+    classNodes.values().stream().filter(c -> ignored.stream().noneMatch(("/" + c.name)::startsWith)).forEach(cn -> {
       gatherInheritedMethods(cn.superName);
       cn.interfaces.forEach(this::gatherInheritedMethods);
       cn.fields.forEach(fn -> {
