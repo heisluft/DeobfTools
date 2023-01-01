@@ -1,7 +1,7 @@
 package de.heisluft.deobf.tooling.binfix;
 
 import de.heisluft.deobf.tooling.Util;
-import de.heisluft.deobf.tooling.mappings.MappingsBuilder;
+import de.heisluft.deobf.mappings.MappingsBuilder;
 import de.heisluft.stream.BiStream;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;

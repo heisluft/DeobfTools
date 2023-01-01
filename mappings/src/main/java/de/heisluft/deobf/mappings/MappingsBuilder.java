@@ -1,6 +1,9 @@
-package de.heisluft.deobf.tooling.mappings;
+package de.heisluft.deobf.mappings;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeSet;
 
 /**
  * MappingsBuilder provides an interface for composing new Mappings without compromising the

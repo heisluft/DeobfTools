@@ -12,8 +12,8 @@ import java.util.Set;
 
 import de.heisluft.deobf.tooling.Util;
 
-import de.heisluft.deobf.tooling.mappings.MappingsBuilder;
-import de.heisluft.deobf.tooling.mappings.MappingsHandlers;
+import de.heisluft.deobf.mappings.MappingsBuilder;
+import de.heisluft.deobf.mappings.MappingsHandlers;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.ClassWriter;
 

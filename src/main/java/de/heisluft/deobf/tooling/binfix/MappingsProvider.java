@@ -1,6 +1,6 @@
 package de.heisluft.deobf.tooling.binfix;
 
-import de.heisluft.deobf.tooling.mappings.MappingsBuilder;
+import de.heisluft.deobf.mappings.MappingsBuilder;
 
 /**
  * This interface can be implemented by all Utilities that are able to generate Mappings

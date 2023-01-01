@@ -5,7 +5,7 @@ import de.heisluft.function.Tuple2;
 
 import static org.objectweb.asm.Opcodes.*;
 
-import de.heisluft.deobf.tooling.mappings.MappingsBuilder;
+import de.heisluft.deobf.mappings.MappingsBuilder;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 

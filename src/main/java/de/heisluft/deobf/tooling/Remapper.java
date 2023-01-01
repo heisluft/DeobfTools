@@ -1,8 +1,8 @@
 package de.heisluft.deobf.tooling;
 
-import de.heisluft.deobf.tooling.mappings.Mappings;
-import de.heisluft.deobf.tooling.mappings.MappingsHandlers;
-import de.heisluft.deobf.tooling.mappings.MappingsHandler;
+import de.heisluft.deobf.mappings.Mappings;
+import de.heisluft.deobf.mappings.MappingsHandlers;
+import de.heisluft.deobf.mappings.MappingsHandler;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.Opcodes;

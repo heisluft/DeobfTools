@@ -1,4 +1,4 @@
-package de.heisluft.deobf.tooling.mappings;
+package de.heisluft.deobf.mappings;
 
 import java.io.IOException;
 import java.nio.file.Files;

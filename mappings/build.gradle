@@ -1,0 +1,51 @@
+plugins {
+  id 'java'
+  id 'signing'
+  id 'maven-publish'
+}
+
+java.toolchain.languageVersion.set(JavaLanguageVersion.of(8))
+
+group 'de.heisluft.deobf.lib'
+version '1.0.0'
+
+tasks.register('sourcesJar', Jar.class) {
+  dependsOn(classes)
+  archiveClassifier.set 'sources'
+  from sourceSets.main.allSource
+}
+
+tasks.withType(JavaCompile.class).configureEach {
+  options.encoding = 'UTF-8'
+}
+
+jar.manifest.attributes([
+  'Automatic-Module-Name': 'deobf.mappings',
+  'Name': 'The name of the specification.',
+  'Specification-Title': 'Extensible Deobfuscation Mappings Library',
+  'Specification-Version': version,
+  'Specification-Vendor': group,
+  'Implementation-Title': 'Extensible Deobfuscation Mappings Library',
+  'Implementation-Version': version,
+  'Implementation-Vendor': group
+])
+
+publishing {
+  repositories.maven {
+    url mavenUrl
+    credentials {
+      username = mavenUsername
+      password = mavenPassword
+    }
+    authentication.withType(BasicAuthentication)
+  }
+  publications.create('maven', MavenPublication) {
+    it.from components.getByName('java')
+    it.artifact sourcesJar
+  }
+}
+
+signing {
+  useGpgCmd()
+  sign publishing.publications.maven
+}

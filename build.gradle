@@ -10,9 +10,14 @@ version '0.1.0'
 
 java.toolchain.languageVersion.set(JavaLanguageVersion.of(8))
 
-task sourcesJar(type: Jar, dependsOn: classes) {
+tasks.register('sourcesJar', Jar.class) {
+    dependsOn(classes)
     archiveClassifier.set 'sources'
     from sourceSets.main.allSource
+}
+
+tasks.withType(JavaCompile.class).configureEach {
+    options.encoding = 'UTF-8'
 }
 
 repositories {
@@ -25,6 +30,7 @@ repositories {
 dependencies {
     implementation 'org.ow2.asm:asm-tree:9.4'
     implementation 'de.heisluft:futile:1.1.0'
+    implementation project("mappings")
 }
 
 shadowJar.manifest.attributes.put('Main-Class', 'de.heisluft.reveng.Remapper')

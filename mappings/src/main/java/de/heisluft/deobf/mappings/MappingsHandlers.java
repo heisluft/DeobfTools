@@ -1,4 +1,4 @@
-package de.heisluft.deobf.tooling.mappings;
+package de.heisluft.deobf.mappings;
 
 import java.util.HashMap;
 import java.util.Map;

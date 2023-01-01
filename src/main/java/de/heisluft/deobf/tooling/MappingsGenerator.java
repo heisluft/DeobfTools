@@ -1,7 +1,7 @@
 package de.heisluft.deobf.tooling;
 
-import de.heisluft.deobf.tooling.mappings.Mappings;
-import de.heisluft.deobf.tooling.mappings.MappingsBuilder;
+import de.heisluft.deobf.mappings.Mappings;
+import de.heisluft.deobf.mappings.MappingsBuilder;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.ClassNode;
