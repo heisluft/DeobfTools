@@ -1,6 +1,5 @@
 package de.heisluft.deobf.tooling.mappings;
 
-import de.heisluft.deobf.tooling.Util;
 import de.heisluft.function.Tuple2;
 
 import java.io.IOException;
@@ -19,7 +18,7 @@ import java.util.List;
  * We only parse in the former.
  *
  */
-public final class RGSMappingsHandler implements MappingsHandler, Util {
+public final class RGSMappingsHandler implements MappingsHandler {
 
   @Override
   public String fileExt() {
@@ -51,13 +50,13 @@ public final class RGSMappingsHandler implements MappingsHandler, Util {
           if(words.length < 3)
             throw new IllegalArgumentException("Error on line '" + line + "'. Expected at least 2 arguments, got" + (words.length - 1));
           String[] fd = splitAt(words[1], words[1].lastIndexOf('/'));
-          getOrPut(mappings.fields, fd[0], new HashMap<>()).put(fd[1], words[2]);
+          mappings.fields.computeIfAbsent(fd[0], k -> new HashMap<>()).put(fd[1], words[2]);
           break;
         case ".method_map":
           if(words.length < 4)
             throw new IllegalArgumentException("Error on line '" + line + "'. Expected at least 3 arguments, got" + (words.length - 1));
           String[] md = splitAt(words[1], words[1].lastIndexOf('/'));
-          getOrPut(mappings.methods, md[0], new HashMap<>()).put(new Tuple2<>(md[1], words[2]), words[3]);
+          mappings.methods.computeIfAbsent(md[0], k -> new HashMap<>()).put(new Tuple2<>(md[1], words[2]), words[3]);
           break;
       }
     }
@@ -67,5 +66,19 @@ public final class RGSMappingsHandler implements MappingsHandler, Util {
       mappings.packages.put(regex, newPackage);
     }
     return mappings;
+  }
+
+  /**
+   * Splits a String at the given index.
+   *
+   * @param toSplit
+   *     the String to be split
+   * @param index
+   *     the index on which to split on
+   *
+   * @return the pair of split halves
+   */
+  private static String[] splitAt(String toSplit, int index) {
+    return new String[]{toSplit.substring(0, index), toSplit.substring(index + 1)};
   }
 }

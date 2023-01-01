@@ -1,13 +1,9 @@
 package de.heisluft.deobf.tooling.mappings;
 
-import de.heisluft.deobf.tooling.Remapper;
 import de.heisluft.function.Tuple2;
 import de.heisluft.stream.BiStream;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Mappings act as an interface for remappers of all kinds. They store information about renamed
@@ -17,6 +13,10 @@ import java.util.Set;
  * To create Mappings from outside the package, use {@link MappingsBuilder} instances.
  */
 public class Mappings {
+
+  /**All Primitive Names*/
+  private static final List<String> PRIMITIVES = Arrays.asList("B", "C", "D", "F", "I", "J", "S", "V", "Z");
+
   /**
    * All Class mappings, names are jvm names ('/' as delimiter) mapped as follows: classMame ->
    * remappedClassName
@@ -160,7 +160,7 @@ public class Mappings {
    * @param methodDescriptor
    *     The methods descriptor
    *
-   * @return a list of all exceptions for this method, never {@code null}
+   * @return a set of all exceptions for this method, never {@code null}
    */
   public Set<String> getExceptions(String className, String methodName, String methodDescriptor) {
     return exceptions.getOrDefault(className + methodName + methodDescriptor, new HashSet<>());
@@ -182,7 +182,7 @@ public class Mappings {
     methods.forEach((className, nameMap) -> {
       Map<Tuple2<String, String>, String> reversedNames = new HashMap<>();
       nameMap.forEach((nameDescTuple, renamed) ->
-        reversedNames.put(new Tuple2<>(renamed, Remapper.INSTANCE.remapDescriptor(nameDescTuple._2, this)), nameDescTuple._1)
+        reversedNames.put(new Tuple2<>(renamed, remapDescriptor(nameDescTuple._2)), nameDescTuple._1)
       );
       mappings.methods.put(getClassName(className), reversedNames);
     });
@@ -248,7 +248,7 @@ public class Mappings {
       methods.get(key).forEach((tuple2, renamedMd) -> {
         String toRenamedMd = other.methods.get(key).get(tuple2);
         if(!renamedMd.equals(toRenamedMd))
-          values.put(tuple2.map1(b -> renamedMd).map2(desc -> Remapper.INSTANCE.remapDescriptor(desc, this)), toRenamedMd);
+          values.put(tuple2.map1(b -> renamedMd).map2(this::remapDescriptor), toRenamedMd);
       });
       mappings.methods.put(getClassName(key), values);
     });
@@ -276,7 +276,7 @@ public class Mappings {
       Map<Tuple2<String, String>, String> otherNameMap = other.methods.getOrDefault(getClassName(className), new HashMap<>());
       Map<Tuple2<String, String>, String> resultingNames = new HashMap<>();
       nameMap.forEach((nameDescTuple, renamed) ->
-          resultingNames.put(nameDescTuple, otherNameMap.getOrDefault(new Tuple2<>(renamed, Remapper.INSTANCE.remapDescriptor(nameDescTuple._2, this)), renamed))
+          resultingNames.put(nameDescTuple, otherNameMap.getOrDefault(new Tuple2<>(renamed, remapDescriptor(nameDescTuple._2)), renamed))
       );
       mappings.methods.put(className, resultingNames);
     });
@@ -306,5 +306,82 @@ public class Mappings {
       mappings.exceptions.get(k).addAll(v);
     });
     return mappings;
+  }
+
+  /**
+   * Remaps a given descriptor with these mappings
+   * @param descriptor the descriptor to remap
+   * @return the remapped descriptor
+   */
+  public String remapDescriptor(String descriptor) {
+    StringBuilder result = new StringBuilder();
+    //Method descriptors start with '('
+    if(descriptor.startsWith("(")) {
+      // split String at ')',
+      // example descriptor "(J[Ljava/lang/String;S)[I" -> ["(J[Ljava/lang/String;S", "[I"]
+      String[] split = descriptor.split("\\)");
+      // "(J[Ljava/lang/String;S" -> "J[Ljava/lang/String;S"
+      String argsDescriptor = split[0].substring(1);
+      if(argsDescriptor.isEmpty()) result.append("()");
+      else {
+        result.append("(");
+        //Parse chars LTR
+        PrimitiveIterator.OfInt iterator = argsDescriptor.chars().iterator();
+        List<Character> currentName = new ArrayList<>();
+        boolean inWord = false;
+        while(iterator.hasNext()) {
+          char c = (char) iterator.nextInt();
+          if(c != 'L' && !inWord) {
+            result.append(c);
+            //Reference descriptors start with 'L'
+          } else if(c == 'L') {
+            inWord = true;
+            currentName.add(c);
+            // ';' marks the end of a reference type descriptor
+          } else if(c == ';') {
+            currentName.add(c);
+            // deobfuscate the finished descriptor and append it
+            result.append(remapDescriptor(toString(currentName)));
+            currentName.clear();
+            inWord = false;
+          } else currentName.add(c);
+        }
+        result.append(')');
+      }
+      //descriptor becomes the return type descriptor e.g. "(J[Ljava/lang/String;S)[I" -> [I
+      descriptor = split[1];
+    }
+    //Copy descriptor so e.g. simple [I descs can be returned easily
+    String cpy = descriptor;
+    // strip arrays, count the dimensions for later
+    int arrDim = 0;
+    while(cpy.startsWith("[")) {
+      arrDim++;
+      cpy = cpy.substring(1);
+    }
+    // primitives don't need to be deobfed
+    if(PRIMITIVES.contains(cpy)) return result + descriptor;
+    // Strip L and ; for lookup (Lmy/package/Class; -> my/package/Class)
+    cpy = cpy.substring(1, cpy.length() - 1);
+    // the mappings do not contain the class, no deobfuscation needed (e.g. java/lang/String...)
+    if(!hasClassMapping(cpy)) return result + descriptor;
+    //prepend the array dimensions if any
+    for(int i = 0; i < arrDim; i++) result.append('[');
+    //convert deobfed class name to descriptor (my/deobfed/ClassName -> Lmy/deobfed/ClassName;)
+    return result.append('L').append(getClassName(cpy)).append(';').toString();
+  }
+
+  /**
+   * Joins the given Collection of characters to a string
+   *
+   * @param chars
+   *     the chars to be joined
+   *
+   * @return the joined string
+   */
+  private static String toString(Collection<Character> chars) {
+    StringBuilder builder = new StringBuilder();
+    chars.forEach(builder::append);
+    return builder.toString();
   }
 }

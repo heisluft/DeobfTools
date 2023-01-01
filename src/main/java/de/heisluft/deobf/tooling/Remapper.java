@@ -30,9 +30,6 @@ import static de.heisluft.function.FunctionalUtil.thrc;
 //The Ultimate Goal would be a Remapper which is smart enough to generate the specialized methods from bridge methods
 public class Remapper implements Util {
   public static final Remapper INSTANCE = new Remapper();
-
-  /**All Primitive Names*/
-  private static final List<String> PRIMITIVES = Arrays.asList("B", "C", "D", "F", "I", "J", "S", "V", "Z");
   //className -> methodName + methodDesc
   private static final Map<String, Set<String>> INHERITABLE_METHODS = new HashMap<>();
   //className -> fieldName + ":" + fieldDesc
@@ -238,7 +235,7 @@ public class Remapper implements Util {
     classNodes.values().forEach(thrc(n -> {
       n.fields.forEach(f -> {
         f.name = remapFieldName(n, f.name, f.desc, mappings);
-        f.desc = remapDescriptor(f.desc, mappings);
+        f.desc = mappings.remapDescriptor(f.desc);
       });
       n.methods.forEach(mn -> {
         Set<String> exceptions = findMethodExceptions(n, mn.name, mn.desc, mappings);
@@ -250,52 +247,52 @@ public class Remapper implements Util {
           }
         }
         mn.name = remapMethodName(n, mn.name, mn.desc, mappings);
-        mn.desc = remapDescriptor(mn.desc, mappings);
+        mn.desc = mappings.remapDescriptor(mn.desc);
         if(mn.localVariables != null) mn.localVariables.forEach(l -> {
-          l.desc = remapDescriptor(l.desc, mappings);
+          l.desc = mappings.remapDescriptor(l.desc);
           l.signature = remapSignature(l.signature, mappings);
         });
-        if(mn.signature != null) mn.signature = remapDescriptor(mn.signature, mappings);
+        if(mn.signature != null) mn.signature = mappings.remapDescriptor(mn.signature);
         mn.tryCatchBlocks.forEach(tcbn->tcbn.type = mappings.getClassName(tcbn.type));
         mn.instructions.forEach(ins -> {
           if(ins instanceof FieldInsnNode) {
             FieldInsnNode fieldNode = (FieldInsnNode) ins;
             if(classNodes.containsKey(fieldNode.owner)) fieldNode.name = remapFieldName(classNodes.get(fieldNode.owner), fieldNode.name, fieldNode.desc, mappings);
-            fieldNode.desc = remapDescriptor(fieldNode.desc, mappings);
-            if(fieldNode.owner.startsWith("[")) fieldNode.owner = remapDescriptor(fieldNode.owner, mappings);
+            fieldNode.desc = mappings.remapDescriptor(fieldNode.desc);
+            if(fieldNode.owner.startsWith("[")) fieldNode.owner = mappings.remapDescriptor(fieldNode.owner);
             else fieldNode.owner = mappings.getClassName(fieldNode.owner);
           }
           if(ins instanceof MethodInsnNode) {
             MethodInsnNode methodNode = (MethodInsnNode) ins;
             methodNode.name = classNodes.containsKey(methodNode.owner) ? remapMethodName(classNodes.get(methodNode.owner), methodNode.name, methodNode.desc, mappings) : methodNode.name;
-            if(methodNode.owner.startsWith("[")) methodNode.owner = remapDescriptor(methodNode.owner, mappings);
+            if(methodNode.owner.startsWith("[")) methodNode.owner = mappings.remapDescriptor(methodNode.owner);
             else methodNode.owner = mappings.getClassName(methodNode.owner);
-            methodNode.desc = remapDescriptor(methodNode.desc, mappings);
+            methodNode.desc = mappings.remapDescriptor(methodNode.desc);
           }
           if(ins instanceof MultiANewArrayInsnNode) {
             MultiANewArrayInsnNode manaNode = (MultiANewArrayInsnNode) ins;
-            manaNode.desc = remapDescriptor(manaNode.desc, mappings);
+            manaNode.desc = mappings.remapDescriptor(manaNode.desc);
           }
           if(ins instanceof TypeInsnNode) {
             TypeInsnNode typeNode = (TypeInsnNode) ins;
-            typeNode.desc = typeNode.desc.startsWith("[") ? remapDescriptor(typeNode.desc, mappings) : mappings.getClassName(typeNode.desc);
+            typeNode.desc = typeNode.desc.startsWith("[") ? mappings.remapDescriptor(typeNode.desc) : mappings.getClassName(typeNode.desc);
           }
           if(ins instanceof LdcInsnNode) {
             LdcInsnNode ldcInsnNode = (LdcInsnNode) ins;
             if(ldcInsnNode.cst instanceof Type) ldcInsnNode.cst = Type
-                .getType(remapDescriptor(((Type) ldcInsnNode.cst).getDescriptor(), mappings));
+                .getType(mappings.remapDescriptor(((Type) ldcInsnNode.cst).getDescriptor()));
           }
           if(ins instanceof InvokeDynamicInsnNode) {
             InvokeDynamicInsnNode iDIN = (InvokeDynamicInsnNode) ins;
             String delCls = iDIN.desc.substring(iDIN.desc.indexOf(')') + 2, iDIN.desc.length() - 1);
             if(classNodes.containsKey(delCls)) iDIN.name = remapMethodName(classNodes.get(delCls), iDIN.name, iDIN.bsmArgs[0].toString(), mappings); //Works on default MethodHandleLookup
-            iDIN.desc = remapDescriptor(iDIN.desc, mappings);
+            iDIN.desc = mappings.remapDescriptor(iDIN.desc);
             for(int i = 0; i < iDIN.bsmArgs.length; i++) {
               Object o = iDIN.bsmArgs[i];
-              if(o instanceof Type) iDIN.bsmArgs[i] = Type.getType(remapDescriptor(((Type) o).getDescriptor(), mappings));
+              if(o instanceof Type) iDIN.bsmArgs[i] = Type.getType(mappings.remapDescriptor(((Type) o).getDescriptor()));
               if(o instanceof Handle) {
                 Handle h = (Handle) o;
-                iDIN.bsmArgs[i] = new Handle(h.getTag(), mappings.getClassName(h.getOwner()), remapMethodName(classNodes.get(h.getOwner()), h.getName(), h.getDesc(), mappings), remapDescriptor(h.getDesc(), mappings), h.isInterface());
+                iDIN.bsmArgs[i] = new Handle(h.getTag(), mappings.getClassName(h.getOwner()), remapMethodName(classNodes.get(h.getOwner()), h.getName(), h.getDesc(), mappings), mappings.remapDescriptor(h.getDesc()), h.isInterface());
               }
             }
           }
@@ -322,7 +319,7 @@ public class Remapper implements Util {
           // Anon Classes
           if(n.outerMethod != null) {
             n.outerMethod = mappings.getMethodName(n.outerClass, n.outerMethod, n.outerMethodDesc);
-            n.outerMethodDesc = remapDescriptor(n.outerMethodDesc, mappings);
+            n.outerMethodDesc = mappings.remapDescriptor(n.outerMethodDesc);
           }
           n.outerClass = mappings.getClassName(n.outerClass);
         }
@@ -338,9 +335,9 @@ public class Remapper implements Util {
     if(signature == null) return null;
     int p = signature.indexOf('<');
     if(p == -1) {
-      return remapDescriptor(signature, mappings);
+      return mappings.remapDescriptor(signature);
     }
-    String remapped = remapDescriptor(signature.substring(0, p) + ';', mappings);
+    String remapped = mappings.remapDescriptor(signature.substring(0, p) + ';');
     StringBuilder builder = new StringBuilder();
     builder.append(remapped, 0, remapped.length() -1);
     builder.append('<');
@@ -374,68 +371,5 @@ public class Remapper implements Util {
       } else currentName.add(c);
     }
     return builder.append(">;").toString();
-  }
-
-  /**
-   * Remaps a given descriptor with the currently loaded mappings
-   * @param descriptor the descriptor to remap
-   * @return the remapped descriptor
-   */
-  public String remapDescriptor(String descriptor, Mappings mappings) {
-    StringBuilder result = new StringBuilder();
-    //Method descriptors start with '('
-    if(descriptor.startsWith("(")) {
-      // split String at ')',
-      // example descriptor "(J[Ljava/lang/String;S)[I" -> ["(J[Ljava/lang/String;S", "[I"]
-      String[] split = descriptor.split("\\)");
-      // "(J[Ljava/lang/String;S" -> "J[Ljava/lang/String;S"
-      String argsDescriptor = split[0].substring(1);
-      if(argsDescriptor.isEmpty()) result.append("()");
-      else {
-        result.append("(");
-        //Parse chars LTR
-        PrimitiveIterator.OfInt iterator = argsDescriptor.chars().iterator();
-        List<Character> currentName = new ArrayList<>();
-        boolean inWord = false;
-        while(iterator.hasNext()) {
-          char c = (char) iterator.nextInt();
-          if(c != 'L' && !inWord) {
-            result.append(c);
-            //Reference descriptors start with 'L'
-          } else if(c == 'L') {
-            inWord = true;
-            currentName.add(c);
-            // ';' marks the end of a reference type descriptor
-          } else if(c == ';') {
-            currentName.add(c);
-            // deobfuscate the finished descriptor and append it
-            result.append(remapDescriptor(toString(currentName), mappings));
-            currentName.clear();
-            inWord = false;
-          } else currentName.add(c);
-        }
-        result.append(')');
-      }
-      //descriptor becomes the return type descriptor e.g. "(J[Ljava/lang/String;S)[I" -> [I
-      descriptor = split[1];
-    }
-    //Copy descriptor so e.g simple [I descs can be returned easily
-    String cpy = descriptor;
-    // strip arrays, count the dimensions for later
-    int arrDim = 0;
-    while(cpy.startsWith("[")) {
-      arrDim++;
-      cpy = cpy.substring(1);
-    }
-    // primitives don't need to be deobfed
-    if(PRIMITIVES.contains(cpy)) return result.toString() + descriptor;
-    // Strip L and ; for lookup (Lmy/package/Class; -> my/package/Class)
-    cpy = cpy.substring(1, cpy.length() - 1);
-    // the mappings do not contain the class, no deobfuscation needed (e.g. java/lang/String...)
-    if(!mappings.hasClassMapping(cpy)) return result.toString() + descriptor;
-    //prepend the array dimensions if any
-    for(int i = 0; i < arrDim; i++) result.append('[');
-    //convert deobfed class name to descriptor (my/deobfed/ClassName -> Lmy/deobfed/ClassName;)
-    return result.append('L').append(mappings.getClassName(cpy)).append(';').toString();
   }
 }

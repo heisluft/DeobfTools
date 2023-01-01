@@ -1,6 +1,5 @@
 package de.heisluft.deobf.tooling.mappings;
 
-import de.heisluft.deobf.tooling.Util;
 import de.heisluft.function.Tuple2;
 
 import java.io.IOException;
@@ -8,7 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
-public final class FRGMappingsHandler implements Util, MappingsHandler {
+public final class FRGMappingsHandler implements MappingsHandler {
 
   private static final int FRG_MAPPING_TYPE_INDEX = 0;
   private static final int FRG_ENTITY_CLASS_NAME_INDEX = 1;
@@ -60,5 +59,20 @@ public final class FRGMappingsHandler implements Util, MappingsHandler {
     }));
     lines.sort(Comparator.naturalOrder());
     Files.write(to, lines);
+  }
+
+
+  /**
+   * Joins an array of strings together with spaces
+   *
+   * @param toJoin
+   *     the String array to join
+   *
+   * @return the joined string
+   */
+  private String join(String[] toJoin) {
+    StringBuilder builder = new StringBuilder(toJoin[0]);
+    for(int i = 1; i < toJoin.length; i++) builder.append(" ").append(toJoin[i]);
+    return builder.toString();
   }
 }

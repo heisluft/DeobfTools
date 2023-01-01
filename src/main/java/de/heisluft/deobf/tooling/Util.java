@@ -181,20 +181,6 @@ public interface Util {
     return new String[]{toSplit.substring(0, index), toSplit.substring(index + 1)};
   }
 
-  /**
-   * Joins an array of strings together with spaces
-   *
-   * @param toJoin
-   *     the String array to join
-   *
-   * @return the joined string
-   */
-  default String join(String[] toJoin) {
-    StringBuilder builder = new StringBuilder(toJoin[0]);
-    for(int i = 1; i < toJoin.length; i++) builder.append(" ").append(toJoin[i]);
-    return builder.toString();
-  }
-
   default <T> Predicate<T> not(Predicate<T> inverted) {
     return inverted.negate();
   }
