@@ -1,6 +1,5 @@
 package de.heisluft.deobf.tooling;
 
-import de.heisluft.deobf.tooling.mappings.Fergie;
 import de.heisluft.deobf.tooling.mappings.Mappings;
 import de.heisluft.deobf.tooling.mappings.MappingsHandlers;
 import de.heisluft.deobf.tooling.mappings.MappingsHandler;
@@ -21,14 +20,7 @@ import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.PrimitiveIterator;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static de.heisluft.function.FunctionalUtil.thrc;
@@ -81,14 +73,19 @@ public class Remapper implements Util {
       System.out.println("                                                 '/com' or '/org/unwanted/' eg. '/com/i.class',");
       System.out.println("                                                 '/computer.xml', '/org/unwanted/b.gif'. This option");
       System.out.println("                                                 will be ignored for tasks only operating on mappings");
-      System.out.println("\n  -o outputPath    --outputPath=outputPath     Overrides the path where the remapped");
+      System.out.println("\n  -o outputPath      --outputPath=outputPath     Overrides the path where the remapped");
       System.out.println("                                                 jar will be written to. This option will be ignored");
       System.out.println("                                                 for 'map', 'genReverseMappings' and 'cleanMappings'.");
+      System.out.println("\n  -s mappingsPath    --supplement=mappingsPath   Valid only for 'map'. Provides supplementary");
+      System.out.println("                                                 mappings. For these, no new mappings will be");
+      System.out.println("                                                 generated, instead they will directly be merged into");
+      System.out.println("                                                 the output mappings file");
       return;
     }
     String action = args[0];
     List<String> ignoredPaths = new ArrayList<>();
     Path outPath = null;
+    Mappings supplementaryMappings = null;
     List<String> ignoredOpts = new ArrayList<>(args.length - 3);
     if(args.length > 3) {
       for(int i = 3; i < args.length; i++) {
@@ -96,6 +93,24 @@ public class Remapper implements Util {
         //As we have no flag options, all options require an argument
         if(arg.startsWith("--") && arg.indexOf('=') < 0 || arg.startsWith("-") && i == args.length-1) {
           ignoredOpts.add(arg);
+          continue;
+        }
+        if((arg.startsWith("--supplementary=") || arg.equals("-s"))) {
+          if(!action.equals("map")) ignoredOpts.add(arg.equals("-s") ? "-s " + args[++i] : arg);
+          else {
+            Path sPath = Paths.get(arg.equals("-s") ? args[++i] : arg.split("=", 2)[1]);
+            if(!Files.isRegularFile(sPath)) {
+              System.err.println("'" + sPath + "' does not point to a regular file");
+              return;
+            }
+            try {
+              supplementaryMappings = MappingsHandlers.findFileHandler(sPath.getFileName().toString()).parseMappings(sPath);
+            } catch (IOException e) {
+              System.err.println("Could not parse supplementary mappings!");
+              e.printStackTrace();
+              return;
+            }
+          }
           continue;
         }
         if((arg.startsWith("--outputPath=") || arg.equals("-o"))) {
@@ -147,7 +162,7 @@ public class Remapper implements Util {
           frgProvider.writeMappings(firstProv.parseMappings(inputPath).generateReverseMappings(), mappingsPath);
           break;
         default:
-          frgProvider.writeMappings(new Fergie().generateMappings(inputPath, ignoredPaths), mappingsPath);
+          frgProvider.writeMappings(new MappingsGenerator(supplementaryMappings).generateMappings(inputPath, ignoredPaths), mappingsPath);
           break;
       }
     } catch(IOException e) {
@@ -155,16 +170,16 @@ public class Remapper implements Util {
     }
   }
 
-  private List<String> findMethodExceptions(ClassNode cls, String mdName, String mdDesc, Mappings mappings) {
+  private Set<String> findMethodExceptions(ClassNode cls, String mdName, String mdDesc, Mappings mappings) {
     //Exception found
     if(mappings.hasMethodMapping(cls.name, mdName, mdDesc)) return mappings.getExceptions(cls.name, mdName, mdDesc);
     //Try inheritance
     return findMethodExceptionsRec(cls, mdName, mdDesc, mappings);
   }
 
-  private List<String> findMethodExceptionsRec(ClassNode cls, String mdName, String mdDesc, Mappings mappings) {
+  private Set<String> findMethodExceptionsRec(ClassNode cls, String mdName, String mdDesc, Mappings mappings) {
     if(INHERITABLE_METHODS.getOrDefault(cls.name, new HashSet<>(0)).contains(mdName + mdDesc) && mappings.hasMethodMapping(cls.name, mdName, mdDesc)) return mappings.getExceptions(cls.name, mdName, mdDesc);
-    List<String> result;
+    Set<String> result;
     if(mappings.hasClassMapping(cls.superName) && (result = findMethodExceptionsRec(classNodes.get(cls.superName), mdName, mdDesc, mappings)) != null) return result;
     for(String iface : cls.interfaces) if(mappings.hasClassMapping(iface) && (result = findMethodExceptionsRec(classNodes.get(iface), mdName, mdDesc, mappings)) != null) return result;
     return null;
@@ -226,10 +241,13 @@ public class Remapper implements Util {
         f.desc = remapDescriptor(f.desc, mappings);
       });
       n.methods.forEach(mn -> {
-        List<String> exceptions = findMethodExceptions(n, mn.name, mn.desc, mappings);
+        Set<String> exceptions = findMethodExceptions(n, mn.name, mn.desc, mappings);
         if(exceptions != null && !exceptions.isEmpty()) {
-          if(mn.exceptions != null) mn.exceptions.addAll(exceptions);
-          else mn.exceptions = new ArrayList<>(exceptions);
+          if(mn.exceptions != null) exceptions.stream().sorted().forEach(mn.exceptions::add);
+          else {
+            mn.exceptions = new ArrayList<>(exceptions);
+            mn.exceptions.sort(Comparator.naturalOrder());
+          }
         }
         mn.name = remapMethodName(n, mn.name, mn.desc, mappings);
         mn.desc = remapDescriptor(mn.desc, mappings);
