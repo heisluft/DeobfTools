@@ -2,7 +2,7 @@ package de.heisluft.deobf.tooling.mappings;
 
 import de.heisluft.function.Tuple2;
 
-import java.util.HashMap;
+import java.util.*;
 
 /**
  * MappingsBuilder provides an interface for composing new Mappings without compromising the
@@ -13,7 +13,15 @@ public final class MappingsBuilder {
   /**
    * The mappings populated by this builder. These are mutable, so we don't expose them.
    */
-  private final Mappings mappings = new Mappings();
+  private final Mappings mappings;
+
+  public MappingsBuilder(Mappings mappings) {
+    this.mappings = new Mappings(mappings);
+  }
+
+  public MappingsBuilder() {
+    this.mappings = new Mappings();
+  }
 
   /**
    * Builds the final Mappings. The returned Mappings are immutable as required in their JavaDoc, so adding new mappings
@@ -62,6 +70,74 @@ public final class MappingsBuilder {
   public void addMethodMapping(String cName, String mName, String mDesc, String rName) {
     if(!mappings.methods.containsKey(cName)) mappings.methods.put(cName, new HashMap<>());
     mappings.methods.get(cName).put(new Tuple2<>(mName, mDesc), rName);
+  }
+
+  /**
+   * Adds all exceptions to the mappings. Exceptions will be appended instead of overridden.
+   *
+   * @param exceptions the list of exceptions to add
+   */
+  public void addExceptions(Map<String, List<String>> exceptions) {
+    exceptions.forEach((s, strings) -> {
+      if(!mappings.exceptions.containsKey(s)) mappings.exceptions.put(s, new TreeSet<>());
+      mappings.exceptions.get(s).addAll(strings);
+    });
+  }
+
+  /**
+   * Returns if any exceptions are mapped for a given method
+   * @param cName
+   *     the name of the class declaring the method
+   * @param mName
+   *     the name of the method
+   * @param mDesc
+   *     the descriptor of the method
+   * @return true if there are any exceptions for the method, false otherwise
+   */
+  public boolean hasExceptionsFor(String cName, String mName, String mDesc) {
+    return mappings.exceptions.containsKey(cName + mName + mDesc);
+  }
+
+  /**
+   * Returns if the mappings contain a mapping for a specific class name
+   *
+   * @param className
+   *     the class name to test for
+   *
+   * @return true if there is a mapping for {@code className}, false otherwise
+   */
+  public boolean hasClassMapping(String className) {
+    return mappings.classes.containsKey(className);
+  }
+
+  /**
+   * Returns if the mappings contain a mapping for a specific method.
+   *
+   * @param className
+   *     the name of the class declaring the method
+   * @param methodName
+   *     the name of the method
+   * @param methodDescriptor
+   *     the descriptor of the method
+   *
+   * @return true if there is a mapping for the method, false otherwise
+   */
+  public boolean hasMethodMapping(String className, String methodName, String methodDescriptor) {
+    return mappings.methods.getOrDefault(className, new HashMap<>()).containsKey(new Tuple2<>(methodName, methodDescriptor));
+  }
+
+  /**
+   * Returns if the mappings contain a mapping for a specific field
+   *
+   * @param className
+   *     the name of the class declaring the field
+   * @param fieldName
+   *     the name of the field
+   *
+   * @return true if there is a mapping for {@code className}, false otherwise
+   */
+  public boolean hasFieldMapping(String className, String fieldName) {
+    return mappings.fields.getOrDefault(className, new HashMap<>()).containsKey(fieldName);
   }
 
   /**

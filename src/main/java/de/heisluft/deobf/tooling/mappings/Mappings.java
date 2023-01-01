@@ -4,10 +4,10 @@ import de.heisluft.deobf.tooling.Remapper;
 import de.heisluft.function.Tuple2;
 import de.heisluft.stream.BiStream;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Mappings act as an interface for remappers of all kinds. They store information about renamed
@@ -34,7 +34,7 @@ public class Mappings {
    * All exceptions added with the mappings, mapped as follows: className + methodName + methodDesc
    * -> list of exception class names exception class names may or may not be already remapped
    */
-  protected final Map<String, List<String>> exceptions = new HashMap<>();
+  protected final Map<String, Set<String>> exceptions = new HashMap<>();
 
   /**
    * Mappings are not to be instantiated outside the Package, use {@link MappingsBuilder#build()}
@@ -57,7 +57,7 @@ public class Mappings {
       methods.get(k).putAll(v);
     });
     toClone.exceptions.forEach((k,v) -> {
-      exceptions.put(k, new ArrayList<>());
+      exceptions.put(k, new HashSet<>());
       exceptions.get(k).addAll(v);
     });
   }
@@ -162,8 +162,8 @@ public class Mappings {
    *
    * @return a list of all exceptions for this method, never {@code null}
    */
-  public List<String> getExceptions(String className, String methodName, String methodDescriptor) {
-    return exceptions.getOrDefault(className + methodName + methodDescriptor, new ArrayList<>());
+  public Set<String> getExceptions(String className, String methodName, String methodDescriptor) {
+    return exceptions.getOrDefault(className + methodName + methodDescriptor, new HashSet<>());
   }
 
   /**
@@ -302,7 +302,7 @@ public class Mappings {
       mappings.methods.get(k).putAll(v);
     });
     exceptions.forEach((k,v) -> {
-      if(!mappings.exceptions.containsKey(k)) mappings.exceptions.put(k, new ArrayList<>());
+      if(!mappings.exceptions.containsKey(k)) mappings.exceptions.put(k, new HashSet<>());
       mappings.exceptions.get(k).addAll(v);
     });
     return mappings;
