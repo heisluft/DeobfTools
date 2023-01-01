@@ -19,7 +19,7 @@ import java.util.List;
  * We only parse in the former.
  *
  */
-public class RGSMappingsHandler implements MappingsHandler, Util {
+public final class RGSMappingsHandler implements MappingsHandler, Util {
 
   @Override
   public String fileExt() {

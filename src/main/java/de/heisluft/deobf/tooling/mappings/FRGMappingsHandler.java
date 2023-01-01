@@ -8,7 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
-public class FRGMappingsHandler implements Util, MappingsHandler {
+public final class FRGMappingsHandler implements Util, MappingsHandler {
 
   private static final int FRG_MAPPING_TYPE_INDEX = 0;
   private static final int FRG_ENTITY_CLASS_NAME_INDEX = 1;

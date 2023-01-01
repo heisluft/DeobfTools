@@ -460,6 +460,14 @@ public class InnerClassDetector implements Util, MappingsProvider {
           innerNode.outerMethod = method._1;
           innerNode.outerMethodDesc = method._2;
           innerNode.outerClass = outer;
+          int i = 1;
+          String base = outer + "$";
+          while (classes.containsKey(base + i) || builder.hasClassNameTarget(base + i)) i++;
+          builder.addClassMapping(inner, outer + "$" + i);
+          if(classes.get(outer).methods.stream().noneMatch(mn -> mn.name.equals(method._1) && mn.desc.equals(method._2) && (mn.access & ACC_STATIC) != 0)) {
+            String[] synNames = innerNode.fields.stream().filter(fn -> (fn.access & ACC_SYNTHETIC) != 0).map(fn -> fn.name).toArray(String[]::new);
+            builder.addFieldMapping(inner, synNames[synNames.length - 1], "this$0"); //we only need the last syn field, as we can't restore values
+          } // else it is a static anonymous class, and we do not restore vals;
         });
       });
     });
@@ -474,6 +482,8 @@ public class InnerClassDetector implements Util, MappingsProvider {
         InnerClassNode icn = new InnerClassNode(inner, outer, innerSimpleName, innerNode.access & 0b11);
         outerNode.innerClasses.add(icn);
         innerNode.innerClasses.add(icn);
+        builder.addClassMapping(inner, outer + "$" + innerSimpleName);
+        innerNode.fields.stream().filter(fn -> (fn.access & ACC_SYNTHETIC) != 0).findFirst().ifPresent(fn -> builder.addFieldMapping(inner, fn.name, "this$0"));
       });
     });
   }
