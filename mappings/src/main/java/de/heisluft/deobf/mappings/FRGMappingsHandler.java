@@ -5,7 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
-public final class FRGMappingsHandler implements MappingsHandler {
+public class FRGMappingsHandler implements MappingsHandler {
 
   private static final int FRG_MAPPING_TYPE_INDEX = 0;
   private static final int FRG_ENTITY_CLASS_NAME_INDEX = 1;
@@ -17,26 +17,30 @@ public final class FRGMappingsHandler implements MappingsHandler {
 
   public Mappings parseMappings(Path input) throws IOException {
     Mappings mappings = new Mappings();
-    Files.readAllLines(input).stream().map(line -> line.split(" ")).forEach(line -> {
-      if("MD:".equals(line[FRG_MAPPING_TYPE_INDEX])) {
-        if(line.length < 5) throw new IllegalArgumentException("Not enough arguments supplied. (" + join(line) + "), expected at least 4 got" + (line.length - 1));
-        String clsName = line[FRG_ENTITY_CLASS_NAME_INDEX];
-        String obfName = line[FRG_ENTITY_NAME_INDEX];
-        String obfDesc = line[FRG_METHOD_DESCRIPTOR_INDEX];
-        mappings.methods.computeIfAbsent(clsName, s -> new HashMap<>()).put(new MdMeta(obfName, obfDesc), line[FRG_MAPPED_METHOD_NAME_INDEX]);
-        for(int i = 5; i < line.length; i++)
-          mappings.exceptions.computeIfAbsent(clsName + obfName + obfDesc, s -> new HashSet<>()).add(line[i]);
-      } else if("FD:".equals(line[FRG_MAPPING_TYPE_INDEX])) {
-        if(line.length != 4) throw new IllegalArgumentException("Illegal amount of Arguments supplied. (" + join(line) + "), expected 3 got" + (line.length - 1));
-        mappings.fields.computeIfAbsent(line[FRG_ENTITY_CLASS_NAME_INDEX], s -> new HashMap<>())
-            .put(line[FRG_ENTITY_NAME_INDEX], line[FRG_MAPPED_FIELD_NAME_INDEX]);
-      } else if("CL:".equals(line[FRG_MAPPING_TYPE_INDEX])) {
-        if(line.length != 3) throw new IllegalArgumentException("Illegal amount of Arguments supplied. (" + join(line) + "), expected 2 got" + (line.length - 1));
-        mappings.classes.put(line[FRG_ENTITY_CLASS_NAME_INDEX], line[FRG_MAPPED_CLASS_NAME_INDEX]);
+    List<String> lines = Files.readAllLines(input);
+    for (String line : lines) {
+      String[] split = line.split(" ");
+      if ("MD:".equals(split[FRG_MAPPING_TYPE_INDEX])) {
+        if (split.length < 5)  throw new IllegalArgumentException("Not enough arguments supplied. (" + line + "), expected at least 4 got" + (split.length - 1));
+        String clsName = split[FRG_ENTITY_CLASS_NAME_INDEX];
+        String obfName = split[FRG_ENTITY_NAME_INDEX];
+        String obfDesc = split[FRG_METHOD_DESCRIPTOR_INDEX];
+        mappings.methods.computeIfAbsent(clsName, s -> new HashMap<>()).put(new MdMeta(obfName, obfDesc), split[FRG_MAPPED_METHOD_NAME_INDEX]);
+        for (int i = 5; i < split.length; i++)
+          mappings.exceptions.computeIfAbsent(clsName + obfName + obfDesc, s -> new HashSet<>()).add(split[i]);
+      } else if ("FD:".equals(split[FRG_MAPPING_TYPE_INDEX])) {
+        if (split.length != 4)
+          throw new IllegalArgumentException("Illegal amount of Arguments supplied. (" + line + "), expected 3 got" + (split.length - 1));
+        mappings.fields.computeIfAbsent(split[FRG_ENTITY_CLASS_NAME_INDEX], s -> new HashMap<>())
+            .put(split[FRG_ENTITY_NAME_INDEX], split[FRG_MAPPED_FIELD_NAME_INDEX]);
+      } else if ("CL:".equals(split[FRG_MAPPING_TYPE_INDEX])) {
+        if (split.length != 3)
+          throw new IllegalArgumentException("Illegal amount of Arguments supplied. (" + line + "), expected 2 got" + (split.length - 1));
+        mappings.classes.put(split[FRG_ENTITY_CLASS_NAME_INDEX], split[FRG_MAPPED_CLASS_NAME_INDEX]);
       } else {
-        System.out.print("Not operating on line '" + join(line) + "'!");
+        System.out.print("Not operating on line '" + line + "'!");
       }
-    });
+    }
     return mappings;
   }
 
@@ -57,20 +61,5 @@ public final class FRGMappingsHandler implements MappingsHandler {
     }));
     lines.sort(Comparator.naturalOrder());
     Files.write(to, lines);
-  }
-
-
-  /**
-   * Joins an array of strings together with spaces
-   *
-   * @param toJoin
-   *     the String array to join
-   *
-   * @return the joined string
-   */
-  private String join(String[] toJoin) {
-    StringBuilder builder = new StringBuilder(toJoin[0]);
-    for(int i = 1; i < toJoin.length; i++) builder.append(" ").append(toJoin[i]);
-    return builder.toString();
   }
 }
