@@ -79,10 +79,7 @@ public final class MappingsBuilder {
    * @param exceptions the list of exceptions to add
    */
   public void addExceptions(Map<String, List<String>> exceptions) {
-    exceptions.forEach((s, strings) -> {
-      if(!mappings.exceptions.containsKey(s)) mappings.exceptions.put(s, new TreeSet<>());
-      mappings.exceptions.get(s).addAll(strings);
-    });
+    exceptions.forEach((s, strings) -> mappings.extraData.computeIfAbsent(s , _k -> new MdExtra()).exceptions.addAll(strings));
   }
 
   /**
@@ -96,7 +93,7 @@ public final class MappingsBuilder {
    * @return true if there are any exceptions for the method, false otherwise
    */
   public boolean hasExceptionsFor(String cName, String mName, String mDesc) {
-    return mappings.exceptions.containsKey(cName + mName + mDesc);
+    return !mappings.extraData.getOrDefault(cName + mName + mDesc, MdExtra.EMPTY).exceptions.isEmpty();
   }
 
   /**

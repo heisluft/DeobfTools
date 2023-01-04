@@ -27,7 +27,7 @@ public class FRGMappingsHandler implements MappingsHandler {
         String obfDesc = split[FRG_METHOD_DESCRIPTOR_INDEX];
         mappings.methods.computeIfAbsent(clsName, s -> new HashMap<>()).put(new MdMeta(obfName, obfDesc), split[FRG_MAPPED_METHOD_NAME_INDEX]);
         for (int i = 5; i < split.length; i++)
-          mappings.exceptions.computeIfAbsent(clsName + obfName + obfDesc, s -> new HashSet<>()).add(split[i]);
+          mappings.extraData.computeIfAbsent(clsName + obfName + obfDesc, s -> new MdExtra()).exceptions.add(split[i]);
       } else if ("FD:".equals(split[FRG_MAPPING_TYPE_INDEX])) {
         if (split.length != 4)
           throw new IllegalArgumentException("Illegal amount of Arguments supplied. (" + line + "), expected 3 got" + (split.length - 1));

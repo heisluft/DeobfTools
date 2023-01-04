@@ -3,15 +3,15 @@ package de.heisluft.deobf.mappings;
 import java.util.Objects;
 
 /**
- * An immutable data class for storing method metadata
+ * An internal immutable data class for storing method metadata
  */
-public final class MdMeta {
+final class MdMeta {
   /** The methods name */
-  public final String name;
+  final String name;
   /** The methods descriptor */
-  public final String desc;
+  final String desc;
 
-  public MdMeta(String name, String desc) {
+  MdMeta(String name, String desc) {
     Objects.requireNonNull(name, "Name must not be null");
     Objects.requireNonNull(desc, "Descriptor must not be null");
     this.name = name;

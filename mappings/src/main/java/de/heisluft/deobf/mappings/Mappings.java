@@ -29,10 +29,10 @@ public class Mappings {
    */
   protected final Map<String, Map<MdMeta, String>> methods = new HashMap<>();
   /**
-   * All exceptions added with the mappings, mapped as follows: className + methodName + methodDesc
-   * -> list of exception class names exception class names may or may not be already remapped
+   * All exceptions and parameters added with the mappings, mapped by className + methodName + methodDesc
+   * set of exception class names, list of parameter names. exception class names may or may not be already remapped
    */
-  protected final Map<String, Set<String>> exceptions = new HashMap<>();
+  protected final Map<String, MdExtra> extraData = new HashMap<>();
 
   /**
    * Mappings are not to be instantiated outside the Package, use {@link MappingsBuilder#build()}
@@ -46,18 +46,9 @@ public class Mappings {
    */
   protected Mappings(Mappings toClone) {
     classes.putAll(toClone.classes);
-    toClone.fields.forEach((k,v) -> {
-      fields.put(k, new HashMap<>());
-      fields.get(k).putAll(v);
-    });
-    toClone.methods.forEach((k,v) -> {
-      methods.put(k, new HashMap<>());
-      methods.get(k).putAll(v);
-    });
-    toClone.exceptions.forEach((k,v) -> {
-      exceptions.put(k, new HashSet<>());
-      exceptions.get(k).addAll(v);
-    });
+    toClone.fields.forEach((k,v) -> fields.computeIfAbsent(k, _k -> new HashMap<>()).putAll(v));
+    toClone.methods.forEach((k,v) -> methods.computeIfAbsent(k, _k -> new HashMap<>()).putAll(v));
+    toClone.extraData.forEach((k, v) -> extraData.put(k, new MdExtra(v)));
   }
 
   /**
@@ -161,11 +152,12 @@ public class Mappings {
    * @return a set of all exceptions for this method, never {@code null}
    */
   public Set<String> getExceptions(String className, String methodName, String methodDescriptor) {
-    return exceptions.getOrDefault(className + methodName + methodDescriptor, new HashSet<>());
+    return extraData.getOrDefault(className + methodName + methodDescriptor, MdExtra.EMPTY).exceptions;
   }
 
   /**
-   * Generates a reversed set of mappings. consider the mappings a->b, this generates b->a
+   * Generates a reversed set of mappings. consider the mappings a->b, this generates b->a.
+   * This does not generate reverse parameter mappings or "anti exceptions"
    *
    * @return the reversed (b->a) mappings
    */
@@ -204,14 +196,14 @@ public class Mappings {
       mappings.fields.put(className, values);
     });
     methods.forEach((className, map) -> {
-      if(map.entrySet().stream().allMatch(e -> e.getKey().name.equals(e.getValue()) && !exceptions.containsKey(className + e.getKey()))) return;
+      if(map.entrySet().stream().allMatch(e -> e.getKey().name.equals(e.getValue()) && !extraData.containsKey(className + e.getKey()))) return;
       Map<MdMeta, String> values = new HashMap<>();
       map.forEach((tuple, remappedMethodName) -> {
-        if(!tuple.name.equals(remappedMethodName) || exceptions.containsKey(className + tuple.name + tuple.desc)) values.put(tuple, remappedMethodName);
+        if(!tuple.name.equals(remappedMethodName) || extraData.containsKey(className + tuple.name + tuple.desc)) values.put(tuple, remappedMethodName);
       });
       mappings.methods.put(className, values);
     });
-    mappings.exceptions.putAll(exceptions);
+    mappings.extraData.putAll(extraData);
     return mappings;
   }
 
@@ -283,7 +275,7 @@ public class Mappings {
 
   /**
    * Generates Mappings that join both the entries of this and other. Where entries clash, the entries of these mappings
-   * take precedence over the entries of {@code other}.
+   * take precedence over the entries of {@code other}. Parameters are overriden, Exceptions are joined
    *
    * @param other the secondary "supplementary" mappings
    * @return the composite mappings
@@ -291,18 +283,9 @@ public class Mappings {
   public Mappings join(Mappings other) {
     Mappings mappings = new Mappings(other);
     mappings.classes.putAll(classes);
-    fields.forEach((k,v) -> {
-      if(!mappings.fields.containsKey(k)) mappings.fields.put(k, new HashMap<>());
-      mappings.fields.get(k).putAll(v);
-    });
-    methods.forEach((k,v) -> {
-      if(!mappings.methods.containsKey(k)) mappings.methods.put(k, new HashMap<>());
-      mappings.methods.get(k).putAll(v);
-    });
-    exceptions.forEach((k,v) -> {
-      if(!mappings.exceptions.containsKey(k)) mappings.exceptions.put(k, new HashSet<>());
-      mappings.exceptions.get(k).addAll(v);
-    });
+    fields.forEach((k,v) -> mappings.fields.computeIfAbsent(k, _k -> new HashMap<>()).putAll(v));
+    methods.forEach((k,v) -> mappings.methods.computeIfAbsent(k, _k -> new HashMap<>()).putAll(v));
+    extraData.forEach((k, v) -> mappings.extraData.computeIfAbsent(k, _k -> new MdExtra(v)).exceptions.addAll(v.exceptions));
     return mappings;
   }
 
