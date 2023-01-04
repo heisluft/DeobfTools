@@ -40,4 +40,25 @@ public interface MappingsHandler {
    * @return the file extension, never {@code null}
    */
   String fileExt();
+
+  /**
+   * @return whether this handler can (de-)serialize exception data
+   */
+  default boolean supportsExceptionData() {
+    return false;
+  }
+
+  /**
+   * @return whether this handler can (de-)serialize parameter mappings
+   */
+  default boolean supportsParameterData() {
+    return false;
+  }
+
+  /**
+   * @return whether this handler can (de-)serialize class, method and field mappings
+   */
+  default boolean supportsRemappingData() {
+    return true;
+  }
 }

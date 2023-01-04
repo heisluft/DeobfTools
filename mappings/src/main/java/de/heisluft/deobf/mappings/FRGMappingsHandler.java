@@ -50,6 +50,11 @@ public class FRGMappingsHandler implements MappingsHandler {
   }
 
   @Override
+  public boolean supportsExceptionData() {
+    return true;
+  }
+
+  @Override
   public void writeMappings(Mappings mappings, Path to) throws IOException {
     List<String> lines = new ArrayList<>();
     mappings.classes.forEach((k, v) -> lines.add("CL: " + k + " " + v));
