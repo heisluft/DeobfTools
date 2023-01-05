@@ -1,6 +1,9 @@
 package de.heisluft.deobf.mappings;
 
+import de.heisluft.deobf.mappings.util.TriConsumer;
+
 import java.util.*;
+import java.util.function.BiConsumer;
 
 /**
  * Mappings act as an interface for remappers of all kinds. They store information about renamed
@@ -32,7 +35,7 @@ public class Mappings {
    * All exceptions and parameters added with the mappings, mapped by className + methodName + methodDesc
    * set of exception class names, list of parameter names. exception class names may or may not be already remapped
    */
-  protected final Map<String, MdExtra> extraData = new HashMap<>();
+  protected final Map<String, Map<MdMeta, MdExtra>> extraData = new HashMap<>();
 
   /**
    * Mappings are not to be instantiated outside the Package, use {@link MappingsBuilder#build()}
@@ -48,7 +51,19 @@ public class Mappings {
     classes.putAll(toClone.classes);
     toClone.fields.forEach((k,v) -> fields.computeIfAbsent(k, _k -> new HashMap<>()).putAll(v));
     toClone.methods.forEach((k,v) -> methods.computeIfAbsent(k, _k -> new HashMap<>()).putAll(v));
-    toClone.extraData.forEach((k, v) -> extraData.put(k, new MdExtra(v)));
+    toClone.extraData.forEach((k, v) -> v.forEach((mdMeta, mdExtra) -> extraData.computeIfAbsent(k, _k -> new HashMap<>()).computeIfAbsent(mdMeta, _k -> new MdExtra(mdExtra))));
+  }
+
+  public void forAllClasses(BiConsumer<String, String> consumer) {
+    classes.forEach(consumer);
+  }
+
+  public void forAllFields(TriConsumer<String, String, String> consumer) {
+    fields.forEach((s, stringStringMap) -> stringStringMap.forEach((s1, s2) -> consumer.accept(s, s1, s2)));
+  }
+
+  public void forAllMethods(TriConsumer<String, MdMeta, String> consumer) {
+    methods.forEach((s, mdMetaStringMap) -> mdMetaStringMap.forEach((mdMeta, s1) -> consumer.accept(s, mdMeta, s1)));
   }
 
   /**
@@ -79,7 +94,7 @@ public class Mappings {
    * @return the mapped name or {@code null} if not found
    */
   public String getMethodName(String className, String methodName, String methodDescriptor) {
-    return methods.getOrDefault(className, new HashMap<>()).get(new MdMeta(methodName, methodDescriptor));
+    return methods.getOrDefault(className, Collections.emptyMap()).get(new MdMeta(methodName, methodDescriptor));
   }
 
   /**
@@ -93,7 +108,7 @@ public class Mappings {
    * @return the mapped name or {@code null} if not found
    */
   public String getFieldName(String className, String fieldName) {
-    return fields.getOrDefault(className, new HashMap<>()).get(fieldName);
+    return fields.getOrDefault(className, Collections.emptyMap()).get(fieldName);
   }
 
   /**
@@ -121,7 +136,7 @@ public class Mappings {
    * @return true if there is a mapping for the method, false otherwise
    */
   public boolean hasMethodMapping(String className, String methodName, String methodDescriptor) {
-    return methods.getOrDefault(className, new HashMap<>()).containsKey(new MdMeta(methodName, methodDescriptor));
+    return methods.getOrDefault(className, Collections.emptyMap()).containsKey(new MdMeta(methodName, methodDescriptor));
   }
 
   /**
@@ -135,7 +150,7 @@ public class Mappings {
    * @return true if there is a mapping for {@code className}, false otherwise
    */
   public boolean hasFieldMapping(String className, String fieldName) {
-    return fields.getOrDefault(className, new HashMap<>()).containsKey(fieldName);
+    return fields.getOrDefault(className, Collections.emptyMap()).containsKey(fieldName);
   }
 
   /**
@@ -152,7 +167,7 @@ public class Mappings {
    * @return a set of all exceptions for this method, never {@code null}
    */
   public Set<String> getExceptions(String className, String methodName, String methodDescriptor) {
-    return extraData.getOrDefault(className + methodName + methodDescriptor, MdExtra.EMPTY).exceptions;
+    return extraData.getOrDefault(className, Collections.emptyMap()).getOrDefault(new MdMeta(methodName, methodDescriptor), MdExtra.EMPTY).exceptions;
   }
 
   /**
@@ -285,7 +300,12 @@ public class Mappings {
     mappings.classes.putAll(classes);
     fields.forEach((k,v) -> mappings.fields.computeIfAbsent(k, _k -> new HashMap<>()).putAll(v));
     methods.forEach((k,v) -> mappings.methods.computeIfAbsent(k, _k -> new HashMap<>()).putAll(v));
-    extraData.forEach((k, v) -> mappings.extraData.computeIfAbsent(k, _k -> new MdExtra(v)).exceptions.addAll(v.exceptions));
+    extraData.forEach((k, v) -> v.forEach((mdMeta, mdExtra) -> {
+      MdExtra extra = extraData.computeIfAbsent(k, _k -> new HashMap<>()).computeIfAbsent(mdMeta, _k -> new MdExtra());
+      extra.exceptions.addAll(mdExtra.exceptions);
+      extra.parameters.clear();
+      extra.parameters.addAll(mdExtra.parameters);
+    }));
     return mappings;
   }
 

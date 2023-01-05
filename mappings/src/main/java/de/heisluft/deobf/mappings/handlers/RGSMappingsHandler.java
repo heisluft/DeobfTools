@@ -1,10 +1,12 @@
-package de.heisluft.deobf.mappings;
+package de.heisluft.deobf.mappings.handlers;
+
+import de.heisluft.deobf.mappings.Mappings;
+import de.heisluft.deobf.mappings.MappingsHandler;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 
 /**
@@ -25,9 +27,8 @@ public final class RGSMappingsHandler implements MappingsHandler {
 
   @Override
   public Mappings parseMappings(Path path) throws IOException {
-    List<String> lines = Files.readAllLines(path);
-
     RGSMappings mappings = new RGSMappings();
+    List<String> lines = Files.readAllLines(path);
     List<String> globs = new ArrayList<>();
     for(String line : lines) {
       if(line.startsWith("#") || line.isEmpty()) continue;
@@ -42,19 +43,19 @@ public final class RGSMappingsHandler implements MappingsHandler {
         case ".class_map":
           if(words.length < 3)
             throw new IllegalArgumentException("Error on line '" + line + "'. Expected at least 2 arguments, got" + (words.length - 1));
-          mappings.classes.put(words[1], words[2]);
+          mappings.addClassMapping(words[1], words[2]);
           break;
         case ".field_map":
           if(words.length < 3)
             throw new IllegalArgumentException("Error on line '" + line + "'. Expected at least 2 arguments, got" + (words.length - 1));
           String[] fd = splitAt(words[1], words[1].lastIndexOf('/'));
-          mappings.fields.computeIfAbsent(fd[0], k -> new HashMap<>()).put(fd[1], words[2]);
+          mappings.addFieldMapping(fd[0], fd[1], words[2]);
           break;
         case ".method_map":
           if(words.length < 4)
             throw new IllegalArgumentException("Error on line '" + line + "'. Expected at least 3 arguments, got" + (words.length - 1));
           String[] md = splitAt(words[1], words[1].lastIndexOf('/'));
-          mappings.methods.computeIfAbsent(md[0], k -> new HashMap<>()).put(new MdMeta(md[1], words[2]), words[3]);
+          mappings.addMethodMapping(md[0], md[1], words[2], words[3]);
           break;
       }
     }

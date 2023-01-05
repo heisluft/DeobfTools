@@ -5,13 +5,13 @@ import java.util.Objects;
 /**
  * An internal immutable data class for storing method metadata
  */
-final class MdMeta {
+public final class MdMeta {
   /** The methods name */
-  final String name;
+  public final String name;
   /** The methods descriptor */
-  final String desc;
+  public final String desc;
 
-  MdMeta(String name, String desc) {
+   public MdMeta(String name, String desc) {
     Objects.requireNonNull(name, "Name must not be null");
     Objects.requireNonNull(desc, "Descriptor must not be null");
     this.name = name;

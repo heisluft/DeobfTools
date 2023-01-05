@@ -1,5 +1,6 @@
 package de.heisluft.deobf.tooling;
 
+import de.heisluft.deobf.mappings.MappingsBuilder;
 import de.heisluft.function.Tuple2;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
@@ -80,7 +81,7 @@ public class ExceptionMapper implements Util {
 
     //mn -> Set<clsName + mdName + mdDesc>
     private static final Map<MethodNode, Set<String>> calledMethods = new HashMap<>();
-    //clsName + mdName + mdDesc -> List<clsName>
+    //clsName + . + mdName + mdDesc -> List<clsName>
     private static final Map<String, List<String>> addedExceptions = new HashMap<>();
     //clsName + mdName + mdDesc
     private static Set<String> lastDirty = new HashSet<>();
@@ -106,7 +107,7 @@ public class ExceptionMapper implements Util {
      * @param node
      */
     public void accept(MethodNode node) {
-      if(addedExceptions.containsKey(className + node.name + node.desc)) return;
+      if(addedExceptions.containsKey(className + "." + node.name + node.desc)) return;
       if(!firstPass && (!calledMethods.containsKey(node) || calledMethods.get(node).stream().noneMatch(lastDirty::contains))) return;
       this.node = node;
       Type[] argTypes = Type.getArgumentTypes(node.desc);
@@ -343,8 +344,8 @@ public class ExceptionMapper implements Util {
       for(int i = 0; i < argTypes.length; i++) stack.pop();
       if(opcode != INVOKESTATIC) stack.pop();
       if(!descriptor.endsWith(")V")) stack.push(descriptor.substring(descriptor.lastIndexOf(')') + 1));
-      if(addedExceptions.containsKey(key)) {
-        addedExceptions.get(key).stream().filter(ex -> isSignificant(desc(ex), caughtExceptions)).forEach(thrownExTypes::add);
+      if(addedExceptions.containsKey(owner + "." + name + descriptor)) {
+        addedExceptions.get(owner + "." + name + descriptor).stream().filter(ex -> isSignificant(desc(ex), caughtExceptions)).forEach(thrownExTypes::add);
       } else {
         Class<?> ownerCls = resolveClass(desc(owner));
         if(ownerCls != null) {
@@ -370,9 +371,8 @@ public class ExceptionMapper implements Util {
       }
       thrownExTypes.clear();
       if(!effExTypes.isEmpty()) {
-        String key = className + node.name + node.desc;
-        addedExceptions.put(key, effExTypes);
-        currentDirty.add(key);
+        addedExceptions.put(className + "." + node.name + node.desc, effExTypes);
+        currentDirty.add(className + node.name + node.desc);
       }
       super.visitEnd();
     }

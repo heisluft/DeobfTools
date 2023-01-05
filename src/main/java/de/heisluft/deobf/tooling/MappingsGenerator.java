@@ -278,7 +278,7 @@ public class MappingsGenerator implements Util {
 
     AtomicInteger fieldCounter = new AtomicInteger(1);
     AtomicInteger methodCounter = new AtomicInteger(1);
-    classNodes.values().stream().filter(c -> ignored.stream().noneMatch(("/" + c.name)::startsWith)).forEach(cn -> {
+    classNodes.values().stream().sorted(Comparator.comparing(classNode -> classNode.name)).filter(c -> ignored.stream().noneMatch(("/" + c.name)::startsWith)).forEach(cn -> {
       gatherInheritedMethods(cn.superName);
       cn.interfaces.forEach(this::gatherInheritedMethods);
       cn.fields.forEach(fn -> {

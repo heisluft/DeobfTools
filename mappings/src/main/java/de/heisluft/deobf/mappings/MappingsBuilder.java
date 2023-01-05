@@ -1,9 +1,6 @@
 package de.heisluft.deobf.mappings;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.TreeSet;
+import java.util.*;
 
 /**
  * MappingsBuilder provides an interface for composing new Mappings without compromising the
@@ -66,7 +63,7 @@ public final class MappingsBuilder {
    * @param cName the binary name of the containing class
    * @param mName the method name to map
    * @param mDesc the methods descriptor
-   * @param rName the remappexd name
+   * @param rName the remapped name
    */
   public void addMethodMapping(String cName, String mName, String mDesc, String rName) {
     if(!mappings.methods.containsKey(cName)) mappings.methods.put(cName, new HashMap<>());
@@ -79,7 +76,37 @@ public final class MappingsBuilder {
    * @param exceptions the list of exceptions to add
    */
   public void addExceptions(Map<String, List<String>> exceptions) {
-    exceptions.forEach((s, strings) -> mappings.extraData.computeIfAbsent(s , _k -> new MdExtra()).exceptions.addAll(strings));
+    exceptions.forEach((s, strings) -> {
+      int dot = s.indexOf('.'), lPar = s.indexOf('(');
+      mappings.extraData.computeIfAbsent(s.substring(0, dot), t -> new HashMap<>())
+          .computeIfAbsent(new MdMeta(s.substring(dot + 1, lPar), s.substring(lPar)), _k -> new MdExtra())
+          .exceptions.addAll(strings);
+    });
+  }
+
+  /**
+   * Sets the parameter mappings for a given method. Previous Mappings are overridden.
+   * @param className the binary name of the containing class
+   * @param methodName the method name
+   * @param methodDesc the methods descriptor
+   * @param parameterNames the list of parameter names to set
+   */
+  public void setParameters(String className, String methodName, String methodDesc, List<String> parameterNames) {
+    List<String> params = mappings.extraData.computeIfAbsent(className, _k -> new HashMap<>()).computeIfAbsent(new MdMeta(methodName, methodDesc), _k -> new MdExtra()).parameters;
+    params.clear();
+    params.addAll(parameterNames);
+  }
+
+  /**
+   * Adds exceptions for the given method to the mappings. Exceptions will be appended instead of overridden.
+   *
+   * @param className the binary name of the containing class
+   * @param methodName the method name
+   * @param methodDesc the methods descriptor
+   * @param exceptions the list of exceptions to add
+   */
+  public void addExceptions(String className, String methodName, String methodDesc, Collection<String> exceptions) {
+    mappings.extraData.computeIfAbsent(className, _k -> new HashMap<>()).computeIfAbsent(new MdMeta(methodName, methodDesc), _k -> new MdExtra()).exceptions.addAll(exceptions);
   }
 
   /**
@@ -93,7 +120,7 @@ public final class MappingsBuilder {
    * @return true if there are any exceptions for the method, false otherwise
    */
   public boolean hasExceptionsFor(String cName, String mName, String mDesc) {
-    return !mappings.extraData.getOrDefault(cName + mName + mDesc, MdExtra.EMPTY).exceptions.isEmpty();
+    return !mappings.extraData.getOrDefault(cName, Collections.emptyMap()).getOrDefault(new MdMeta(mName, mDesc), MdExtra.EMPTY).exceptions.isEmpty();
   }
 
   /**

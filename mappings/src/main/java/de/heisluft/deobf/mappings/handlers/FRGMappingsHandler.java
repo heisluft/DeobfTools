@@ -1,4 +1,6 @@
-package de.heisluft.deobf.mappings;
+package de.heisluft.deobf.mappings.handlers;
+
+import de.heisluft.deobf.mappings.*;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -16,7 +18,7 @@ public class FRGMappingsHandler implements MappingsHandler {
   private static final int FRG_MAPPED_METHOD_NAME_INDEX = 4;
 
   public Mappings parseMappings(Path input) throws IOException {
-    Mappings mappings = new Mappings();
+    MappingsBuilder builder = new MappingsBuilder();
     List<String> lines = Files.readAllLines(input);
     for (String line : lines) {
       String[] split = line.split(" ");
@@ -25,23 +27,21 @@ public class FRGMappingsHandler implements MappingsHandler {
         String clsName = split[FRG_ENTITY_CLASS_NAME_INDEX];
         String obfName = split[FRG_ENTITY_NAME_INDEX];
         String obfDesc = split[FRG_METHOD_DESCRIPTOR_INDEX];
-        mappings.methods.computeIfAbsent(clsName, s -> new HashMap<>()).put(new MdMeta(obfName, obfDesc), split[FRG_MAPPED_METHOD_NAME_INDEX]);
-        for (int i = 5; i < split.length; i++)
-          mappings.extraData.computeIfAbsent(clsName + obfName + obfDesc, s -> new MdExtra()).exceptions.add(split[i]);
+        builder.addMethodMapping(clsName, obfName, obfDesc, split[FRG_MAPPED_METHOD_NAME_INDEX]);
+        builder.addExceptions(clsName, obfName, obfDesc, Arrays.asList(split).subList(5, split.length - 1));
       } else if ("FD:".equals(split[FRG_MAPPING_TYPE_INDEX])) {
         if (split.length != 4)
           throw new IllegalArgumentException("Illegal amount of Arguments supplied. (" + line + "), expected 3 got" + (split.length - 1));
-        mappings.fields.computeIfAbsent(split[FRG_ENTITY_CLASS_NAME_INDEX], s -> new HashMap<>())
-            .put(split[FRG_ENTITY_NAME_INDEX], split[FRG_MAPPED_FIELD_NAME_INDEX]);
+        builder.addFieldMapping(split[FRG_ENTITY_CLASS_NAME_INDEX], split[FRG_ENTITY_NAME_INDEX], split[FRG_MAPPED_FIELD_NAME_INDEX]);
       } else if ("CL:".equals(split[FRG_MAPPING_TYPE_INDEX])) {
         if (split.length != 3)
           throw new IllegalArgumentException("Illegal amount of Arguments supplied. (" + line + "), expected 2 got" + (split.length - 1));
-        mappings.classes.put(split[FRG_ENTITY_CLASS_NAME_INDEX], split[FRG_MAPPED_CLASS_NAME_INDEX]);
+        builder.addClassMapping(split[FRG_ENTITY_CLASS_NAME_INDEX], split[FRG_MAPPED_CLASS_NAME_INDEX]);
       } else {
         System.out.print("Not operating on line '" + line + "'!");
       }
     }
-    return mappings;
+    return builder.build();
   }
 
   @Override
@@ -57,13 +57,13 @@ public class FRGMappingsHandler implements MappingsHandler {
   @Override
   public void writeMappings(Mappings mappings, Path to) throws IOException {
     List<String> lines = new ArrayList<>();
-    mappings.classes.forEach((k, v) -> lines.add("CL: " + k + " " + v));
-    mappings.fields.forEach((clsName, map) -> map.forEach((obfFd, deobfFd) -> lines.add("FD: " + clsName + " " + obfFd + " " + deobfFd)));
-    mappings.methods.forEach((clsName, map) -> map.forEach((obfMet, deobfName) -> {
+    mappings.forAllClasses((k, v) -> lines.add("CL: " + k + " " + v));
+    mappings.forAllFields((clsName, obfFd, deobfFd) -> lines.add("FD: " + clsName + " " + obfFd + " " + deobfFd));
+    mappings.forAllMethods((clsName, obfMet, deobfName) -> {
       StringBuilder line = new StringBuilder("MD: " + clsName + " " + obfMet.name + " " + obfMet.desc + " " + deobfName);
       mappings.getExceptions(clsName, obfMet.name, obfMet.desc).stream().sorted().forEach(s -> line.append(" ").append(s));
       lines.add(line.toString());
-    }));
+    });
     lines.sort(Comparator.naturalOrder());
     Files.write(to, lines);
   }
