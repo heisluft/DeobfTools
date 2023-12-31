@@ -7,7 +7,7 @@ plugins {
 java.toolchain.languageVersion.set(JavaLanguageVersion.of(8))
 
 group 'de.heisluft.deobf.lib'
-version '1.0.0'
+version '1.0.1'
 
 tasks.register('sourcesJar', Jar.class) {
   dependsOn(classes)

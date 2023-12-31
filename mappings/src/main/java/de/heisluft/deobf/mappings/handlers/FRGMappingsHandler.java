@@ -28,7 +28,7 @@ public class FRGMappingsHandler implements MappingsHandler {
         String obfName = split[FRG_ENTITY_NAME_INDEX];
         String obfDesc = split[FRG_METHOD_DESCRIPTOR_INDEX];
         builder.addMethodMapping(clsName, obfName, obfDesc, split[FRG_MAPPED_METHOD_NAME_INDEX]);
-        builder.addExceptions(clsName, obfName, obfDesc, Arrays.asList(split).subList(5, split.length - 1));
+        if (split.length > 5) builder.addExceptions(clsName, obfName, obfDesc, Arrays.asList(split).subList(5, split.length - 1));
       } else if ("FD:".equals(split[FRG_MAPPING_TYPE_INDEX])) {
         if (split.length != 4)
           throw new IllegalArgumentException("Illegal amount of Arguments supplied. (" + line + "), expected 3 got" + (split.length - 1));
