@@ -425,8 +425,19 @@ public class ExceptionMapper implements Util {
     }
 
     public void visitVarInsn(int opcode, int var) {
-      if(opcode >= ILOAD && opcode <= ALOAD) stack.push(locals.get(var));
-      if(opcode >= ISTORE && opcode <= ASTORE) locals.put(var, stack.pop());
+      if(opcode == ILOAD) stack.push("I");
+      else if(opcode == LLOAD) stack.push("J");
+      else if(opcode == FLOAD) stack.push("F");
+      else if(opcode == DLOAD) stack.push("D");
+      else if(opcode == ALOAD) stack.push(locals.get(var));
+      else {
+        String pop = stack.pop();
+        if (opcode == ISTORE) stack.push("I");
+        else if (opcode == LSTORE) stack.push("J");
+        else if (opcode == FSTORE) stack.push("F");
+        else if (opcode == DSTORE) stack.push("D");
+        else if (opcode == ASTORE) locals.put(var, pop);
+      }
       super.visitVarInsn(opcode, var);
     }
 
