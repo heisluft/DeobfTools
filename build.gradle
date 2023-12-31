@@ -33,7 +33,7 @@ dependencies {
     implementation project("mappings")
 }
 
-shadowJar.manifest.attributes.put('Main-Class', 'de.heisluft.reveng.Remapper')
+shadowJar.manifest.attributes.put('Main-Class', 'de.heisluft.deobf.tooling.Remapper')
 
 publishing {
     repositories.maven {
