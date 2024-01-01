@@ -34,7 +34,8 @@ import java.util.stream.Collectors;
  * first positive integer for which a class with a name matching the generated name does not exist.
  */
 //TODO: Emit mappings for accessor methods
-//TODO: use accessor methods to detect static inner classes
+//TODO: Use accessor methods to detect static inner classes
+//TODO: Use Type instantiation to detect static anon classes
 public class InnerClassDetector implements Util, MappingsProvider {
 
   /** The mappings builder used in this run. */
@@ -176,7 +177,7 @@ public class InnerClassDetector implements Util, MappingsProvider {
           break;
         case AbstractInsnNode.MULTIANEWARRAY_INSN:
           String desc = ((MultiANewArrayInsnNode)ain).desc;
-          if(desc.contains(";") && cName.equals(desc.substring(desc.lastIndexOf('[' + 2), desc.length() - 1))) // Strip leading '['s, 'L' and trailing ';'
+          if(desc.contains(";") && cName.equals(desc.substring(desc.lastIndexOf('[') + 2, desc.length() - 1))) // Strip leading '['s, 'L' and trailing ';'
             return new Tuple2<>(AnonRef.DISQUALIFYING, "Cannot create arrays of anonymous classes");
           break;
         default:
@@ -323,8 +324,8 @@ public class InnerClassDetector implements Util, MappingsProvider {
     final Map<String, Set<Tuple2<String, String>>> staticAccessors = new HashMap<>();
     final Map<String, Set<Tuple2<String, String>>> instanceAccessors = new HashMap<>();
     final Map<String, Set<String>> instanceClasses = new HashMap<>();
-    final Map<String, Map<Tuple2<String, String>, Set<String>>> anons = new HashMap<>();
-    final Map<String, Set<String>> nonAnons = new HashMap<>();
+    final Map<String, Map<Tuple2<String, String>, Set<String>>> anonInstanceClasses = new HashMap<>();
+    final Map<String, Set<String>> namedInstanceClasses = new HashMap<>();
     final Map<String, String> reverseOuterLookup = new HashMap<>();
 
     classes.values().forEach(cn -> {
@@ -342,7 +343,7 @@ public class InnerClassDetector implements Util, MappingsProvider {
           if(synFieldsForClass.isEmpty()) return;
 
           Type[] argTypes = Type.getArgumentTypes(mn.desc);
-          if(argTypes.length == 0) return;
+          if(argTypes.length == 0 || !classes.containsKey(argTypes[0].getInternalName())) return;
 
           boolean supInvokFound = false;
 
@@ -351,6 +352,15 @@ public class InnerClassDetector implements Util, MappingsProvider {
               AbstractInsnNode next = ain.getNext();
               if(!isLoadInsn(next.getOpcode())) continue;
               int local = ((VarInsnNode) next).var;
+              // Longs and doubles take up 2 Locals
+              int doubleCorrection = 0;
+              for (int i = 0; i < argTypes.length; i++) {
+                if(i + 1 + doubleCorrection >= local) break;
+                Type arg = argTypes[i];
+                if (arg.equals(Type.DOUBLE_TYPE) || arg.equals(Type.LONG_TYPE))
+                  doubleCorrection++;
+              }
+              local -= doubleCorrection;
               next = next.getNext();
               if(next.getOpcode() != PUTFIELD) continue;
               FieldInsnNode fin = (FieldInsnNode) next;
@@ -367,7 +377,7 @@ public class InnerClassDetector implements Util, MappingsProvider {
           }
           String outerName = argTypes[0].getInternalName();
           // Anonymous classes must have a constructor with package visibility
-          if((mn.access & 0b111) != 0) getOrPut(nonAnons, outerName, new HashSet<>()).add(cn.name);
+          if((mn.access & 0b111) != 0) getOrPut(namedInstanceClasses, outerName, new HashSet<>()).add(cn.name);
           else getOrPut(instanceClasses, outerName, new HashSet<>()).add(cn.name);
           reverseOuterLookup.put(cn.name, outerName);
         }
@@ -423,12 +433,12 @@ public class InnerClassDetector implements Util, MappingsProvider {
           switch(tup._1) {
             case DISQUALIFYING:
               System.out.println("Class " + name + " cannot be anonymous: " + tup._2);
-              getOrPut(nonAnons, outer, new HashSet<>()).add(name);
+              getOrPut(namedInstanceClasses, outer, new HashSet<>()).add(name);
               return;
             case LEGAL:
               if(outerMethod != null) {
                 System.out.println("Class " + name + " is referenced from more than one method. It cannot be anonymous.");
-                getOrPut(nonAnons, outer, new HashSet<>()).add(name);
+                getOrPut(namedInstanceClasses, outer, new HashSet<>()).add(name);
                 return;
               }
               outerMethod = m;
@@ -438,16 +448,16 @@ public class InnerClassDetector implements Util, MappingsProvider {
       }
       if(outerMethod == null) {
         System.out.println("Class " + name + " is never used. It cannot be anonymous.");
-        getOrPut(nonAnons, outer, new HashSet<>()).add(name);
+        getOrPut(namedInstanceClasses, outer, new HashSet<>()).add(name);
       } else {
-        getOrPut(getOrPut(anons, outer, new HashMap<>()), new Tuple2<>(outerMethod.name, outerMethod.desc), new HashSet<>()).add(name);
+        getOrPut(getOrPut(anonInstanceClasses, outer, new HashMap<>()), new Tuple2<>(outerMethod.name, outerMethod.desc), new HashSet<>()).add(name);
       }
     });
 
-    System.out.println("Anons: " + anons);
-    System.out.println("Safe NonAnons: " + nonAnons);
+    System.out.println("Anons: " + anonInstanceClasses);
+    System.out.println("Safe NonAnons: " + namedInstanceClasses);
 
-    anons.forEach((outer, method2Inners) -> {
+    anonInstanceClasses.forEach((outer, method2Inners) -> {
       dirtyClasses.add(outer);
       ClassNode outerNode = classes.get(outer);
       method2Inners.forEach((method, inners) -> {
@@ -471,7 +481,7 @@ public class InnerClassDetector implements Util, MappingsProvider {
         });
       });
     });
-    nonAnons.forEach((outer, inners) -> {
+    namedInstanceClasses.forEach((outer, inners) -> {
       dirtyClasses.add(outer);
       ClassNode outerNode = classes.get(outer);
       inners.forEach(inner -> {
