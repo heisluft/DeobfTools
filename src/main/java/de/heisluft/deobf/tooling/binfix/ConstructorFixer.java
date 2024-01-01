@@ -3,18 +3,14 @@ package de.heisluft.deobf.tooling.binfix;
 import de.heisluft.deobf.tooling.Util;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
-import org.objectweb.asm.tree.AbstractInsnNode;
-import org.objectweb.asm.tree.ClassNode;
-import org.objectweb.asm.tree.InsnNode;
-import org.objectweb.asm.tree.MethodInsnNode;
-import org.objectweb.asm.tree.MethodNode;
-import org.objectweb.asm.tree.VarInsnNode;
+import org.objectweb.asm.tree.*;
 
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
 import static org.objectweb.asm.Opcodes.ACC_STATIC;
+import static org.objectweb.asm.Opcodes.ALOAD;
 
 /**
  * The constructor fixer is a tool to move empty super() calls to the first position and adding constructors for classes
@@ -48,25 +44,29 @@ public class ConstructorFixer implements Util {
   private boolean transformClassNode(ClassNode cn, Map<String, ClassNode> classCache) {
     for(MethodNode m : cn.methods) {
       if(!m.name.equals("<init>")) continue;
-      int i;
-      for(i = 0; i < m.instructions.size(); i++) {
-        AbstractInsnNode ain = m.instructions.get(i);
-        if(ain instanceof VarInsnNode && ((VarInsnNode) ain).var == 0) {
-          if(ain.getNext().getOpcode() == Opcodes.INVOKESPECIAL) {
-            MethodInsnNode min = ((MethodInsnNode) ain.getNext());
-            if(min.owner.equals(cn.superName) && min.desc.equals("()V")) break;
+      int relativeOffset = 0, absoluteOffset = -2;
+      for(AbstractInsnNode ain : m.instructions) {
+        absoluteOffset++;
+        if(ain instanceof LineNumberNode || ain instanceof LabelNode || ain instanceof FrameNode) continue;
+        if(ain.getOpcode() == Opcodes.INVOKESPECIAL) {
+          MethodInsnNode min = ((MethodInsnNode) ain);
+          if(min.owner.equals(cn.superName)) {
+            if(min.desc.equals("()V")) break;
+            else return false;
           }
+          else if(min.owner.equals(cn.name)) return false;
         }
+        if(ain.getOpcode() != ALOAD || ((VarInsnNode)ain).var != 0) relativeOffset++;
       }
-      if(i == 0 || i == m.instructions.size()) return false;
+      if(relativeOffset == 0 || relativeOffset == m.instructions.size()) return false;
       // Instance Inner Classes should not have their constructor data shuffled
       // The code is left in place for classes whose data was not restored
       if(Util.hasNone(cn.access, ACC_STATIC) && cn.innerClasses.stream().anyMatch(icn -> icn.name.equals(cn.name))) return false;
-      System.out.println("Fixing Class: " + cn.name + " (extending " + cn.superName + ") super call offset: " + i);
+      System.out.println("Fixing Class: " + cn.name + " (extending " + cn.superName + ") super call offset: " + absoluteOffset + " (relative " + relativeOffset + ")");
       // super call is not first
-      AbstractInsnNode aload0 = m.instructions.get(i);
+      AbstractInsnNode aload0 = m.instructions.get(absoluteOffset);
       m.instructions.remove(aload0);
-      AbstractInsnNode ivsp = m.instructions.get(i);
+      AbstractInsnNode ivsp = m.instructions.get(absoluteOffset);
       m.instructions.remove(ivsp);
       m.instructions.insert(ivsp);
       m.instructions.insert(aload0);
