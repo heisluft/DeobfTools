@@ -88,7 +88,7 @@ public class Remapper implements Util {
       for(int i = 3; i < args.length; i++) {
         String arg = args[i];
         //As we have no flag options, all options require an argument
-        if(arg.startsWith("--") && arg.indexOf('=') < 0 || arg.startsWith("-") && i == args.length-1) {
+        if(arg.startsWith("--") && arg.indexOf('=') < 0 || (arg.startsWith("-") && !arg.startsWith("--") && i == args.length-1)) {
           ignoredOpts.add(arg);
           continue;
         }
