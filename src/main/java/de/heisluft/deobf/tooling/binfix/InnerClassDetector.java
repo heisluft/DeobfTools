@@ -329,6 +329,10 @@ public class InnerClassDetector implements Util, MappingsProvider {
     final Map<String, String> reverseOuterLookup = new HashMap<>();
 
     classes.values().forEach(cn -> {
+      if(cn.outerClass != null || cn.outerMethod != null || cn.outerMethodDesc != null || (cn.innerClasses != null && !cn.innerClasses.isEmpty())) {
+        System.out.println(cn.name + " already contains inner class information, skipping");
+        return;
+      }
       // skip synthetic classes, they can be checked for enum switches with EnumSwitchClassDetector
       if((cn.access & ACC_SYNTHETIC) != 0) return;
       // Enums can never be instance inner classes, so we just skip them
