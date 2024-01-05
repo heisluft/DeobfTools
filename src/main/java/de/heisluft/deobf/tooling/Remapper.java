@@ -29,7 +29,6 @@ import static de.heisluft.function.FunctionalUtil.thrc;
 //TODO: Come up with an idea on how to restore generic signatures of obfuscated classes with the help of the specialized subclass bridge methods
 //The Ultimate Goal would be a Remapper which is smart enough to generate the specialized methods from bridge methods
 public class Remapper implements Util {
-  public static final Remapper INSTANCE = new Remapper();
   //className -> methodName + methodDesc
   private static final Map<String, Set<String>> INHERITABLE_METHODS = new HashMap<>();
   //className -> fieldName + ":" + fieldDesc
@@ -77,11 +76,14 @@ public class Remapper implements Util {
       System.out.println("                                                 mappings. For these, no new mappings will be");
       System.out.println("                                                 generated, instead they will directly be merged into");
       System.out.println("                                                 the output mappings file");
+      System.out.println("\n  -j jdkPath         --jdkPath=jdkPath            Valid only for 'map'. Path to JDK, used for");
+      System.out.println("                                                 inferring exceptions");
       return;
     }
     String action = args[0];
     List<String> ignoredPaths = new ArrayList<>();
     Path outPath = null;
+    Path jdkPath = null;
     Mappings supplementaryMappings = null;
     List<String> ignoredOpts = new ArrayList<>(args.length - 3);
     if(args.length > 3) {
@@ -92,10 +94,21 @@ public class Remapper implements Util {
           ignoredOpts.add(arg);
           continue;
         }
-        if((arg.startsWith("--supplementary=") || arg.equals("-s"))) {
+        if(arg.startsWith("--jdk=") || arg.equals("-j")) {
+          if(!action.equals("map")) ignoredOpts.add(arg.equals("-j") ? "-j " + args[++i] : arg);
+          else {
+            jdkPath = Paths.get(arg.equals("-j") ? args[++i] : arg.substring(arg.indexOf('=') + 1));
+            if(!Files.isDirectory(jdkPath)) {
+              System.err.println("'" + jdkPath + "' does not point to a regular file");
+              return;
+            }
+          }
+          continue;
+        }
+        if(arg.startsWith("--supplementary=") || arg.equals("-s")) {
           if(!action.equals("map")) ignoredOpts.add(arg.equals("-s") ? "-s " + args[++i] : arg);
           else {
-            Path sPath = Paths.get(arg.equals("-s") ? args[++i] : arg.split("=", 2)[1]);
+            Path sPath = Paths.get(arg.equals("-s") ? args[++i] : arg.substring(arg.indexOf('=') + 1));
             if(!Files.isRegularFile(sPath)) {
               System.err.println("'" + sPath + "' does not point to a regular file");
               return;
@@ -113,13 +126,13 @@ public class Remapper implements Util {
         if((arg.startsWith("--outputPath=") || arg.equals("-o"))) {
           if(!(action.equals("remap") || action.equals("genMediatorMappings") || action.equals("genConversionMappings")) || outPath != null || arg.contains("=") && arg.split("=", 2)[1].isEmpty())
             ignoredOpts.add(arg.equals("-o") ? "-o " + args[++i] : arg);
-          else outPath = Paths.get(arg.equals("-o") ? args[++i] : arg.split("=", 2)[1]);
+          else outPath = Paths.get(arg.equals("-o") ? args[++i] : arg.substring(arg.indexOf('=') + 1));
           continue;
         }
         if(arg.startsWith("--ignorePaths") || arg.equals("-i")) {
           if(!(action.equals("remap") || action.equals("map")) || !ignoredPaths.isEmpty() || arg.contains("=") && arg.split("=", 2)[1].isEmpty())
             ignoredOpts.add(arg.equals("-i") ? "-i " + args[++i] : arg);
-          else ignoredPaths.addAll(Arrays.asList((arg.equals("-i") ? args[++i] : arg.split("=", 2)[1]).split(";")));
+          else ignoredPaths.addAll(Arrays.asList((arg.equals("-i") ? args[++i] : arg.substring(arg.indexOf('=') + 1)).split(";")));
           continue;
         }
         ignoredOpts.add(arg.startsWith("-") ? arg + " " + args[++i] : arg);
@@ -159,7 +172,7 @@ public class Remapper implements Util {
           frgProvider.writeMappings(firstProv.parseMappings(inputPath).generateReverseMappings(), mappingsPath);
           break;
         default:
-          frgProvider.writeMappings(new MappingsGenerator(supplementaryMappings).generateMappings(inputPath, ignoredPaths), mappingsPath);
+          frgProvider.writeMappings(new MappingsGenerator(supplementaryMappings, jdkPath == null ? null : new JDKClassProvider(jdkPath)).generateMappings(inputPath, ignoredPaths), mappingsPath);
           break;
       }
     } catch(IOException e) {

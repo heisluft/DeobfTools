@@ -1,6 +1,5 @@
 package de.heisluft.deobf.tooling;
 
-import de.heisluft.deobf.mappings.MappingsBuilder;
 import de.heisluft.function.Tuple2;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
@@ -22,17 +21,23 @@ public class ExceptionMapper implements Util {
   private static final List<String> exClasses = new ArrayList<>();
   private static final List<String> runtimeExesAndErrors = new ArrayList<>();
 
+  private final JDKClassProvider provider;
+
+  public ExceptionMapper(JDKClassProvider provider) {
+    this.provider = provider;
+  }
+
   public Map<String, List<String>> analyzeExceptions(Path inJar) throws IOException {
     classNodes.putAll(parseClasses(inJar));
     classNodes.values().stream().filter(this::isExceptionClass).map(cn -> cn.name).forEach(exClasses::add);
     classNodes.values().stream().filter(this::isRuntimeOrErrorClass).map(cn -> cn.name).forEach(runtimeExesAndErrors::add);
-    classNodes.values().forEach(cn -> cn.methods.forEach(new ExInferringMV(cn.name)::accept));
+    classNodes.values().forEach(cn -> cn.methods.forEach(new ExInferringMV(cn.name, provider)::accept));
     if(ExInferringMV.currentDirty.isEmpty()) return new HashMap<>();
     ExInferringMV.firstPass = false;
     while (!ExInferringMV.currentDirty.isEmpty()) {
       ExInferringMV.lastDirty = ExInferringMV.currentDirty;
       ExInferringMV.currentDirty = new HashSet<>();
-      classNodes.values().forEach(cn -> cn.methods.forEach(new ExInferringMV(cn.name)::accept));
+      classNodes.values().forEach(cn -> cn.methods.forEach(new ExInferringMV(cn.name, provider)::accept));
     }
     return ExInferringMV.addedExceptions;
   }
@@ -43,6 +48,11 @@ public class ExceptionMapper implements Util {
     if(sup.equals("java/lang/Error")) return true;
     if(sup.equals("java/lang/RuntimeException")) return true;
     if(sup.equals("java/lang/Object")) return false;
+    if(provider != null) {
+      ClassNode supC = provider.getClassNode(sup);
+      if(supC != null) return isRuntimeOrErrorClass(supC);
+      return classNodes.containsKey(sup) && isRuntimeOrErrorClass(classNodes.get(sup));
+    }
     Class<?> c = ExInferringMV.resolveClass(ExInferringMV.desc(sup));
     if(c != null) {
       return Error.class.isAssignableFrom(c) || RuntimeException.class.isAssignableFrom(c);
@@ -56,6 +66,11 @@ public class ExceptionMapper implements Util {
     if(sup.equals("java/lang/Exception")) return true;
     if(sup.equals("java/lang/Object")) return false;
     if(sup.equals("java/lang/RuntimeException")) return false;
+    if(provider != null) {
+      ClassNode supC = provider.getClassNode(sup);
+      if(supC != null) return isExceptionClass(supC);
+      return classNodes.containsKey(sup) && isExceptionClass(classNodes.get(sup));
+    }
     Class<?> c = ExInferringMV.resolveClass(ExInferringMV.desc(sup));
     if(c != null) {
       return Exception.class.isAssignableFrom(c) && !RuntimeException.class.isAssignableFrom(c);
@@ -79,6 +94,8 @@ public class ExceptionMapper implements Util {
     private final List<String> caughtExceptions = new ArrayList<>();
     private final Stack<Label> awaited = new Stack<>();
 
+    private final JDKClassProvider provider;
+
     //mn -> Set<clsName + mdName + mdDesc>
     private static final Map<MethodNode, Set<String>> calledMethods = new HashMap<>();
     //clsName + . + mdName + mdDesc -> List<clsName>
@@ -94,12 +111,13 @@ public class ExceptionMapper implements Util {
     private static final Map<String, Executable> methodCache = new HashMap<>();
 
     /**
-     *
      * @param className
+     * @param provider
      */
-    public ExInferringMV(String className) {
+    public ExInferringMV(String className, JDKClassProvider provider) {
       super(ASM7);
       this.className = className;
+      this.provider = provider;
     }
 
     /**
@@ -347,15 +365,27 @@ public class ExceptionMapper implements Util {
       if(addedExceptions.containsKey(owner + "." + name + descriptor)) {
         addedExceptions.get(owner + "." + name + descriptor).stream().filter(ex -> isSignificant(desc(ex), caughtExceptions)).forEach(thrownExTypes::add);
       } else {
-        Class<?> ownerCls = resolveClass(desc(owner));
-        if(ownerCls != null) {
-         Executable ex = resolveMethod(ownerCls, name, descriptor, argTypes);
-          if(ex != null) {
-            Class<?>[] exTypes = ex.getExceptionTypes();
-            for(Class<?> exType : exTypes) {
-              if(isSignificant(Type.getDescriptor(exType), caughtExceptions)) thrownExTypes.add(Type.getInternalName(exType));
-           }
-         }
+        if(provider != null) {
+          ClassNode cn = provider.getClassNode(owner);
+          if(cn != null) {
+            Optional<MethodNode> op = cn.methods.stream()
+                .filter(mn -> mn.name.equals(name) && mn.desc.equals(descriptor)).findFirst();
+            if(op.isPresent()) {
+              List<String> exTypes = op.get().exceptions;
+              for(String exType : exTypes)
+                if(isSignificant("L" + exType + ";", caughtExceptions)) thrownExTypes.add(exType);
+            }
+          }
+        } else {
+          Class<?> ownerCls = resolveClass(desc(owner));
+          if(ownerCls != null) {
+            Executable ex = resolveMethod(ownerCls, name, descriptor, argTypes);
+            if(ex != null) {
+              Class<?>[] exTypes = ex.getExceptionTypes();
+              for(Class<?> exType : exTypes)
+                if(isSignificant(Type.getDescriptor(exType), caughtExceptions)) thrownExTypes.add(Type.getInternalName(exType));
+            }
+          }
         }
       }
       super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
@@ -469,7 +499,7 @@ public class ExceptionMapper implements Util {
      * @param caughtExceptions
      * @return
      */
-    private static boolean isSignificant(String exDesc, List<String> caughtExceptions) {
+    private boolean isSignificant(String exDesc, List<String> caughtExceptions) {
       if(exDesc.equals("null")) return false;
       String exType = exDesc.substring(1, exDesc.length() - 1);
       if(caughtExceptions.stream().filter(Objects::nonNull).anyMatch(ex-> {
@@ -479,6 +509,16 @@ public class ExceptionMapper implements Util {
           s = classNodes.get(s).superName;
           if(s.equals(ex)) return true;
         }
+        if(provider != null) {
+          ClassNode exNode = provider.getClassNode(ex);
+          if(exNode == null) return false;
+          ClassNode caughtExNode = provider.getClassNode(s);
+          while(caughtExNode != null) {
+            if(caughtExNode.name.equals(exNode.name)) return true;
+            caughtExNode = provider.getClassNode(caughtExNode.superName);
+          }
+          return false;
+        }
         Class<?> jExType = resolveClass(s);
         if(jExType == null) return false;
         Class<?> caughtExType = resolveClass(ex);
@@ -486,6 +526,18 @@ public class ExceptionMapper implements Util {
       })) return false;
       if(ExceptionMapper.exClasses.contains(exType)) return true;
       if(ExceptionMapper.runtimeExesAndErrors.contains(exType)) return false;
+      if(provider != null) {
+        ClassNode nExType = provider.getClassNode(exType);
+        if(exType == null) return true;
+        ClassNode errNode = provider.getClassNode("java/lang/Error");
+        ClassNode rExNode = provider.getClassNode("java/lang/RuntimeException");
+        ClassNode curr = nExType;
+        while(curr != null) {
+          if(errNode.name.equals(curr.name) || rExNode.name.equals(curr.name) || caughtExceptions.contains(curr.name)) return false;
+          curr = provider.getClassNode(curr.superName);
+        }
+        return true;
+      }
       Class<?> jExType = resolveClass(exType);
       if(jExType == null) return true;
       if(RuntimeException.class.isAssignableFrom(jExType)) return false;

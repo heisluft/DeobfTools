@@ -61,13 +61,16 @@ public class MappingsGenerator implements Util {
   private final Map<String, ClassNode> classNodes = new HashMap<>();
   /** The mappings builder to use */
   private final MappingsBuilder builder;
+  /** Access to JDK classes for inheritance */
+  private final JDKClassProvider provider;
 
   /**
    * Constructs a new Generator instance. Instances are single use!
    * @param supplementaryMappings supplementary mappings to use. if there is no
    */
-  public MappingsGenerator(Mappings supplementaryMappings) {
+  public MappingsGenerator(Mappings supplementaryMappings, JDKClassProvider provider) {
    builder = supplementaryMappings == null ? new MappingsBuilder() : new MappingsBuilder(supplementaryMappings);
+   this.provider = provider;
   }
 
   /**
@@ -98,7 +101,8 @@ public class MappingsGenerator implements Util {
    *     the name of the class to find inherited methods for
    */
   private void gatherInheritedMethods(String cls, String addTo) {
-    if(!classNodes.containsKey(cls)) {
+    if(cls == null) return;
+    if(!classNodes.containsKey(cls) && provider == null) {
       try {
         gatherInheritedMethods(Class.forName(cls.replace("/", ".")), addTo);
       } catch(ClassNotFoundException e) {
@@ -106,7 +110,7 @@ public class MappingsGenerator implements Util {
       }
       return;
     }
-    ClassNode node = classNodes.get(cls);
+    ClassNode node = classNodes.containsKey(cls) ? classNodes.get(cls) : provider.getClassNode(cls);
     for(MethodNode m : node.methods)
       if(Util.hasNone(m.access, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE, Opcodes.ACC_STATIC))
         inheritableMethods.get(addTo).add(m.name + m.desc);
@@ -160,6 +164,7 @@ public class MappingsGenerator implements Util {
     if(node.superName.equals("java/lang/Object")) return false;
     if(classNodes.containsKey(node.superName))
       return isSerializable(classNodes.get(node.superName));
+    if(provider != null) return isSerializable(provider.getClassNode(node.superName));
     try {
       return isSerializable(Class.forName(node.superName.replace('/', '.')));
     } catch(ClassNotFoundException exception) {
@@ -274,7 +279,7 @@ public class MappingsGenerator implements Util {
         builder.addClassMapping(cn, modifiedName);
     });
 
-    builder.addExceptions(new ExceptionMapper().analyzeExceptions(input));
+    builder.addExceptions(new ExceptionMapper(provider).analyzeExceptions(input));
 
     AtomicInteger fieldCounter = new AtomicInteger(1);
     AtomicInteger methodCounter = new AtomicInteger(1);
