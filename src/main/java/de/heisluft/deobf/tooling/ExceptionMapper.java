@@ -91,8 +91,6 @@ public class ExceptionMapper implements Util {
     private static Set<String> currentDirty = new HashSet<>();
     private static boolean firstPass = true;
 
-    private static final Map<String, Class<?>> classCache = new HashMap<>();
-
     /**
      * @param className
      * @param provider
@@ -500,36 +498,6 @@ public class ExceptionMapper implements Util {
         curr = provider.getClassNode(curr.superName);
       }
       return true;
-    }
-
-    /**
-     *
-     * @param desc
-     * @return
-     */
-    static Class<?> resolveClass(String desc) {
-      if(desc == null) return null;
-      //Class.forName is weird, so we need to transform reference types
-      String clsName = (desc.startsWith("L") && desc.endsWith(";") ? desc.substring(1, desc.length() - 1) : desc).replace('/', '.');
-      if(classCache.containsKey(clsName)) return classCache.get(clsName);
-      try {
-        classCache.put(clsName, Class.forName(clsName));
-        return classCache.get(clsName);
-      } catch(ReflectiveOperationException e) {
-        classCache.put(clsName, null);
-        return null;
-      }
-    }
-
-    static {
-      classCache.put("D", double.class);
-      classCache.put("F", float.class);
-      classCache.put("I", int.class);
-      classCache.put("S", short.class);
-      classCache.put("B", byte.class);
-      classCache.put("Z", boolean.class);
-      classCache.put("C", char.class);
-      classCache.put("J", long.class);
     }
   }
 }
