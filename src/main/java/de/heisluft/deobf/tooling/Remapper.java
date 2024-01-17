@@ -172,7 +172,7 @@ public class Remapper implements Util {
           frgProvider.writeMappings(firstProv.parseMappings(inputPath).generateReverseMappings(), mappingsPath);
           break;
         default:
-          frgProvider.writeMappings(new MappingsGenerator(supplementaryMappings, jdkPath == null ? null : new JDKClassProvider(jdkPath)).generateMappings(inputPath, ignoredPaths), mappingsPath);
+          frgProvider.writeMappings(new MappingsGenerator(supplementaryMappings, jdkPath == null ? new JDKClassProvider() : new JDKClassProvider(jdkPath)).generateMappings(inputPath, ignoredPaths), mappingsPath);
           break;
       }
     } catch(IOException e) {

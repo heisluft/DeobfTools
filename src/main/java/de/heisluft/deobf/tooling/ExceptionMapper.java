@@ -8,7 +8,6 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
 import java.io.IOException;
-import java.lang.reflect.Executable;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -48,15 +47,8 @@ public class ExceptionMapper implements Util {
     if(sup.equals("java/lang/Error")) return true;
     if(sup.equals("java/lang/RuntimeException")) return true;
     if(sup.equals("java/lang/Object")) return false;
-    if(provider != null) {
-      ClassNode supC = provider.getClassNode(sup);
-      if(supC != null) return isRuntimeOrErrorClass(supC);
-      return classNodes.containsKey(sup) && isRuntimeOrErrorClass(classNodes.get(sup));
-    }
-    Class<?> c = ExInferringMV.resolveClass(ExInferringMV.desc(sup));
-    if(c != null) {
-      return Error.class.isAssignableFrom(c) || RuntimeException.class.isAssignableFrom(c);
-    }
+    ClassNode supC = provider.getClassNode(sup);
+    if(supC != null) return isRuntimeOrErrorClass(supC);
     return classNodes.containsKey(sup) && isRuntimeOrErrorClass(classNodes.get(sup));
   }
 
@@ -66,15 +58,8 @@ public class ExceptionMapper implements Util {
     if(sup.equals("java/lang/Exception")) return true;
     if(sup.equals("java/lang/Object")) return false;
     if(sup.equals("java/lang/RuntimeException")) return false;
-    if(provider != null) {
-      ClassNode supC = provider.getClassNode(sup);
-      if(supC != null) return isExceptionClass(supC);
-      return classNodes.containsKey(sup) && isExceptionClass(classNodes.get(sup));
-    }
-    Class<?> c = ExInferringMV.resolveClass(ExInferringMV.desc(sup));
-    if(c != null) {
-      return Exception.class.isAssignableFrom(c) && !RuntimeException.class.isAssignableFrom(c);
-    }
+    ClassNode supC = provider.getClassNode(sup);
+    if(supC != null) return isExceptionClass(supC);
     return classNodes.containsKey(sup) && isExceptionClass(classNodes.get(sup));
   }
 
@@ -107,8 +92,6 @@ public class ExceptionMapper implements Util {
     private static boolean firstPass = true;
 
     private static final Map<String, Class<?>> classCache = new HashMap<>();
-    //clsName + mdName + mdDesc -> Method
-    private static final Map<String, Executable> methodCache = new HashMap<>();
 
     /**
      * @param className
@@ -365,26 +348,14 @@ public class ExceptionMapper implements Util {
       if(addedExceptions.containsKey(owner + "." + name + descriptor)) {
         addedExceptions.get(owner + "." + name + descriptor).stream().filter(ex -> isSignificant(desc(ex), caughtExceptions)).forEach(thrownExTypes::add);
       } else {
-        if(provider != null) {
-          ClassNode cn = provider.getClassNode(owner);
-          if(cn != null) {
-            Optional<MethodNode> op = cn.methods.stream()
-                .filter(mn -> mn.name.equals(name) && mn.desc.equals(descriptor)).findFirst();
-            if(op.isPresent()) {
-              List<String> exTypes = op.get().exceptions;
-              for(String exType : exTypes)
-                if(isSignificant("L" + exType + ";", caughtExceptions)) thrownExTypes.add(exType);
-            }
-          }
-        } else {
-          Class<?> ownerCls = resolveClass(desc(owner));
-          if(ownerCls != null) {
-            Executable ex = resolveMethod(ownerCls, name, descriptor, argTypes);
-            if(ex != null) {
-              Class<?>[] exTypes = ex.getExceptionTypes();
-              for(Class<?> exType : exTypes)
-                if(isSignificant(Type.getDescriptor(exType), caughtExceptions)) thrownExTypes.add(Type.getInternalName(exType));
-            }
+        ClassNode cn = provider.getClassNode(owner);
+        if(cn != null) {
+          Optional<MethodNode> op = cn.methods.stream()
+              .filter(mn -> mn.name.equals(name) && mn.desc.equals(descriptor)).findFirst();
+          if(op.isPresent()) {
+            List<String> exTypes = op.get().exceptions;
+            for(String exType : exTypes)
+              if(isSignificant("L" + exType + ";", caughtExceptions)) thrownExTypes.add(exType);
           }
         }
       }
@@ -509,42 +480,24 @@ public class ExceptionMapper implements Util {
           s = classNodes.get(s).superName;
           if(s.equals(ex)) return true;
         }
-        if(provider != null) {
-          ClassNode exNode = provider.getClassNode(ex);
-          if(exNode == null) return false;
-          ClassNode caughtExNode = provider.getClassNode(s);
-          while(caughtExNode != null) {
-            if(caughtExNode.name.equals(exNode.name)) return true;
-            caughtExNode = provider.getClassNode(caughtExNode.superName);
-          }
-          return false;
+        ClassNode exNode = provider.getClassNode(ex);
+        if(exNode == null) return false;
+        ClassNode caughtExNode = provider.getClassNode(s);
+        while(caughtExNode != null) {
+          if(caughtExNode.name.equals(exNode.name)) return true;
+          caughtExNode = provider.getClassNode(caughtExNode.superName);
         }
-        Class<?> jExType = resolveClass(s);
-        if(jExType == null) return false;
-        Class<?> caughtExType = resolveClass(ex);
-        return caughtExType != null && caughtExType.isAssignableFrom(jExType);
+        return false;
       })) return false;
       if(ExceptionMapper.exClasses.contains(exType)) return true;
       if(ExceptionMapper.runtimeExesAndErrors.contains(exType)) return false;
-      if(provider != null) {
-        ClassNode nExType = provider.getClassNode(exType);
-        if(exType == null) return true;
-        ClassNode errNode = provider.getClassNode("java/lang/Error");
-        ClassNode rExNode = provider.getClassNode("java/lang/RuntimeException");
-        ClassNode curr = nExType;
-        while(curr != null) {
-          if(errNode.name.equals(curr.name) || rExNode.name.equals(curr.name) || caughtExceptions.contains(curr.name)) return false;
-          curr = provider.getClassNode(curr.superName);
-        }
-        return true;
-      }
-      Class<?> jExType = resolveClass(exType);
-      if(jExType == null) return true;
-      if(RuntimeException.class.isAssignableFrom(jExType)) return false;
-      if(Error.class.isAssignableFrom(jExType)) return false;
-      for(String cEx : caughtExceptions) {
-        Class<?> jEx = resolveClass(cEx);
-        if(jEx != null && jEx.isAssignableFrom(jExType)) return false;
+      ClassNode nExType = provider.getClassNode(exType);
+      ClassNode errNode = provider.getClassNode("java/lang/Error");
+      ClassNode rExNode = provider.getClassNode("java/lang/RuntimeException");
+      ClassNode curr = nExType;
+      while(curr != null) {
+        if(errNode.name.equals(curr.name) || rExNode.name.equals(curr.name) || caughtExceptions.contains(curr.name)) return false;
+        curr = provider.getClassNode(curr.superName);
       }
       return true;
     }
@@ -565,37 +518,6 @@ public class ExceptionMapper implements Util {
       } catch(ReflectiveOperationException e) {
         classCache.put(clsName, null);
         return null;
-      }
-    }
-
-    /**
-     *
-     * @param c
-     * @param name
-     * @param desc
-     * @param argTypes
-     * @return
-     */
-    private static Executable resolveMethod(Class<?> c, String name, String desc, Type[] argTypes) {
-      if(methodCache.containsKey(c + name + desc)) return methodCache.get(c + name + desc);
-      Class<?>[] jArgTypes = Arrays.stream(argTypes).map(Type::getDescriptor).map(ExInferringMV::resolveClass).toArray(Class<?>[]::new);
-      try {
-        Executable ex;
-        if("<init>".equals(name)) ex = c.getConstructor(jArgTypes);
-        else ex = c.getMethod(name, jArgTypes);
-        methodCache.put(c + name + desc, ex);
-        return ex;
-      } catch(ReflectiveOperationException e) {
-        try {
-          Executable ex;
-          if("<init>".equals(name)) ex = c.getDeclaredConstructor(jArgTypes);
-          else ex = c.getDeclaredMethod(name, jArgTypes);
-          methodCache.put(c + name + desc, ex);
-          return ex;
-        } catch(ReflectiveOperationException e1) {
-          methodCache.put(c + name + desc, null);
-          return null;
-        }
       }
     }
 

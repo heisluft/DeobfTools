@@ -9,7 +9,6 @@ import org.objectweb.asm.tree.MethodNode;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -74,25 +73,6 @@ public class MappingsGenerator implements Util {
   }
 
   /**
-   * Recursively searches for methods inherited to addTom adding them to this.inheritableMethods
-   *
-   * @param cls
-   *     the current class to be indexed
-   * @param addTo
-   *     the name of the class to find inherited methods for
-   */
-  private void gatherInheritedMethods(Class<?> cls, String addTo) {
-    if(cls != null && !cls.getName().equals(Object.class.getName())) {
-      for(Method m : cls.getDeclaredMethods())
-        if(Util.hasNone(m.getModifiers(), Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE,
-            Opcodes.ACC_STATIC))
-          inheritableMethods.get(addTo).add(m.getName() + Type.getMethodDescriptor(m));
-      for(Class<?> iface : cls.getInterfaces()) gatherInheritedMethods(iface, addTo);
-      gatherInheritedMethods(cls.getSuperclass(), addTo);
-    }
-  }
-
-  /**
    * Recursively searches for methods inherited to addTo adding them to this.inheritableMethods
    *
    * @param cls
@@ -102,14 +82,6 @@ public class MappingsGenerator implements Util {
    */
   private void gatherInheritedMethods(String cls, String addTo) {
     if(cls == null) return;
-    if(!classNodes.containsKey(cls) && provider == null) {
-      try {
-        gatherInheritedMethods(Class.forName(cls.replace("/", ".")), addTo);
-      } catch(ClassNotFoundException e) {
-        e.printStackTrace();
-      }
-      return;
-    }
     ClassNode node = classNodes.containsKey(cls) ? classNodes.get(cls) : provider.getClassNode(cls);
     for(MethodNode m : node.methods)
       if(Util.hasNone(m.access, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE, Opcodes.ACC_STATIC))
@@ -137,23 +109,6 @@ public class MappingsGenerator implements Util {
    * does
    *
    * @param node
-   *     the class to check
-   *
-   * @return whether thr class inherits from Serializable in any way
-   */
-  private boolean isSerializable(Class<?> node) {
-    return node.equals(Serializable.class) ||
-        Arrays.asList(node.getInterfaces()).contains(Serializable.class) ||
-        !node.getSuperclass().equals(Object.class) && isSerializable(node.getSuperclass());
-  }
-
-  /**
-   * Returns whether a class inherits from java/io/Serializable in any way, either because it is an
-   * interface subclassing Serializable either directly or indirectly or because its a normal class
-   * either directly implementing Serializable or subclassing a class directly or indirectly that
-   * does
-   *
-   * @param node
    *     the class node to check
    *
    * @return whether the class inherits from Serializable in any way
@@ -164,12 +119,7 @@ public class MappingsGenerator implements Util {
     if(node.superName.equals("java/lang/Object")) return false;
     if(classNodes.containsKey(node.superName))
       return isSerializable(classNodes.get(node.superName));
-    if(provider != null) return isSerializable(provider.getClassNode(node.superName));
-    try {
-      return isSerializable(Class.forName(node.superName.replace('/', '.')));
-    } catch(ClassNotFoundException exception) {
-      return false;
-    }
+    return isSerializable(provider.getClassNode(node.superName));
   }
 
   /**
