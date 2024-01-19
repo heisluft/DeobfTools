@@ -3,18 +3,18 @@ package de.heisluft.deobf.tooling;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.signature.SignatureReader;
 import org.objectweb.asm.signature.SignatureVisitor;
-import org.objectweb.asm.signature.SignatureWriter;
 import org.objectweb.asm.tree.*;
 
 import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.function.BiFunction;
 
 import static org.objectweb.asm.Opcodes.*;
 
 public class BridgeTool implements Util {
   private final Map<String, ClassNode> classes;
-  private final JDKClassProvider classProvider;
+  private final JDKClassProvider classProvider = new JDKClassProvider();
 
   public static void main(String[] args) throws IOException {
     new BridgeTool().detect();
@@ -22,10 +22,16 @@ public class BridgeTool implements Util {
 
   BridgeTool() throws IOException {
     classes = parseClasses(Paths.get("remap-tests/jars/mc/client/alpha/a1.1.2_01.jar"));
-    classProvider = new JDKClassProvider(Paths.get("C:\\Program Files\\Java\\jdk-8"));
   }
 
   public void detect() {
+    new BiFunction<Class<? extends Exception>,Class<? super String>, byte[]>() {
+
+      @Override
+      public byte[] apply(Class<? extends Exception> aClass, Class<? super String> aClass2) {
+        return new byte[0];
+      }
+    };
     classes.values().forEach(cn -> {
       if(cn.superName.equals("java/lang/Object") && cn.interfaces.isEmpty()) return;
       cn.methods.forEach(mn -> {
@@ -80,70 +86,30 @@ public class BridgeTool implements Util {
         MethodNode decl = inheritedFrom.methods.stream().filter(m -> mn.desc.equals(m.desc) && mn.name.equals(m.name)).findFirst().get();
         if(decl.signature == null) return;
         SignatureReader mSigReader = new SignatureReader(decl.signature);
-        mSigReader.accept(new SignatureVisitor(ASM8) {
-
+        mSigReader.accept(new SignatureVisitor(ASM9) {
+        });
+        List<String> typeVars = new ArrayList<>();
+        SignatureReader classSigReader = new SignatureReader(inheritedFrom.signature);
+        classSigReader.accept(new SignatureVisitor(ASM9) {
           @Override
-          public SignatureVisitor visitParameterType() {
-            System.out.println("partype");
-            return this;
-          }
-
-          @Override
-          public SignatureVisitor visitReturnType() {
-            System.out.println("rettype");
-            return this;
-          }
-
-          @Override
-          public SignatureVisitor visitExceptionType() {
-            System.out.println("extype");
-            return this;
-          }
-
-          @Override
-          public void visitBaseType(char descriptor) {
-            System.out.println(descriptor);
-          }
-
-          @Override
-          public void visitTypeVariable(String name) {
-            System.out.println(name);
-          }
-
-          @Override
-          public SignatureVisitor visitArrayType() {
-            System.out.println("arrType");
-            return this;
-          }
-
-          @Override
-          public void visitClassType(String name) {
-            System.out.println(name);
-          }
-
-          @Override
-          public void visitInnerClassType(String name) {
-            System.out.println(name);
-          }
-
-          @Override
-          public void visitTypeArgument() {
-            System.out.println("*");
-          }
-
-          @Override
-          public SignatureVisitor visitTypeArgument(char wildcard) {
-            System.out.println(wildcard);
-            return this;
-          }
-
-          @Override
-          public void visitEnd() {
-            super.visitEnd();
+          public void visitFormalTypeParameter(String name) {
+            typeVars.add(name);
           }
         });
-        SignatureReader classSigReader = new SignatureReader(inheritedFrom.signature);
-        classSigReader.accept(new SignatureWriter());
+        System.out.println(typeVars);
+        StringBuffer sb = new StringBuffer("L" + cn.superName + ";");
+        for(String iface : cn.interfaces) {
+          sb.append("L").append(iface);
+          if(inheritedFrom.name.equals(iface)) {
+            List<String> encountered = new ArrayList<>();
+            for(int i = 0; i < argTypes.length; i++) {
+              if(!argTypes[i].equals(refinedTypes[i]));
+            }
+            sb.append("<").append(">");
+          }
+          sb.append(";");
+        }
+        System.out.println(sb);
       });
     });
   }
