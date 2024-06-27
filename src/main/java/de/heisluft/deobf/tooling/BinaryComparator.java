@@ -1,57 +1,52 @@
 package de.heisluft.deobf.tooling;
 
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.tree.ClassNode;
+
 import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.FileSystem;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 
 public class BinaryComparator implements Util {
 
+  Map<String, String> packageMigrations = new HashMap<>();
+  Map<String, String> nameMappings = new HashMap<>();
+  Set<String> missingNames = new HashSet<>();
+
   private final MessageDigest MD5;
+
 
   private BinaryComparator() throws NoSuchAlgorithmException {
     MD5 = MessageDigest.getInstance("MD5");
+    packageMigrations.put("com/mojang/minecraft/", "net/minecraft/client/");
+    packageMigrations.put("", "");
   }
 
-  private void doStuff(Path cmp1, Path cmp2) throws IOException{
-    try(FileSystem fs = createFS(cmp1); FileSystem fs2 = createFS(cmp2)) {
-      Files.walk(fs.getPath("/")).filter(this::hasClassExt).forEach(p -> {
-        Path p2 = fs2.getPath(p.toString());
-        if(!Files.exists(p2)) {
-          System.out.println("class " + p + " not present in cmp2");
+  private void doStuff(Path cmp1, Path cmp2) throws IOException {
+    Map<String, ClassNode> firstClasses = parseClasses(cmp1, Collections.emptyList(), ClassReader.SKIP_CODE);
+    Map<String, ClassNode> secondClasses = parseClasses(cmp2, Collections.emptyList(), ClassReader.SKIP_CODE);
+    System.out.println("Performing Dumb Comparison");
+    firstClasses.keySet().forEach(s -> {
+        String found = packageMigrations.keySet().stream().filter(s::startsWith).findFirst().orElse("");
+        String subst = packageMigrations.get(found) + s.substring(found.length());
+        if(!secondClasses.containsKey(subst)) {
+          missingNames.add(subst);
           return;
         }
-        try {
-          long size1 = Files.size(p);
-          long size2 = Files.size(p2);
-          if(size1 > size2) {
-            System.out.println("Class " + p + " is bigger in cmp1");
-            return;
-          }
-          if(size2 > size1) {
-            System.out.println("Class " + p + " is bigger in cmp2");
-            return;
-          }
-          byte[] md51 = MD5.digest(Files.readAllBytes(p));
-          MD5.reset();
-          byte[] md52 = MD5.digest(Files.readAllBytes(p2));
-          MD5.reset();
-          if(Arrays.equals(md51, md52)) return;
-          System.out.println("checksum mismatch for " + p + ":");
-          System.out.println("cmp1: " + toHexString(md51));
-          System.out.println("cmp2: " + toHexString(md52));
-        } catch(IOException e) {
-          throw new UncheckedIOException(e);
-        }
-      });
-    }catch(UncheckedIOException ex) {
-      throw ex.getCause();
-    }
+        ClassNode old = firstClasses.get(s), _new = secondClasses.get(subst);
+        String sfound = packageMigrations.keySet().stream().filter(old.superName::startsWith).findFirst().orElse("");
+        String ssubst = packageMigrations.get(sfound) + old.superName.substring(sfound.length());
+        if(ssubst.equals(_new.superName)) System.out.println(subst + ": " + ssubst + " vs " + _new.superName);
+    });
   }
 
   private static String toHexString(byte[] bytes) {
@@ -62,6 +57,7 @@ public class BinaryComparator implements Util {
 
   public static void main(String[] args) throws IOException, NoSuchAlgorithmException {
     Path prt = Paths.get("remap-tests/jars/mc/");
+
     new BinaryComparator().doStuff(prt.resolve("client/classic/c0.30_s.jar"), prt.resolve("client/indev/in-20091223-2.jar"));
   }
 }

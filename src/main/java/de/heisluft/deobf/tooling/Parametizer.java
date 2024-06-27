@@ -23,7 +23,7 @@ public class Parametizer implements Util {
     List<String> lines = new ArrayList<>();
     Files.copy(inputPath, outputPath, StandardCopyOption.REPLACE_EXISTING);
     try(FileSystem system = createFS(outputPath)) {
-      Files.walk(system.getPath("/")).filter(p -> hasClassExt(p) && Stream.of("/paulscode", "/com/jcraft").noneMatch(s -> p.toString().startsWith(s))).map(thr(this::parseClass)).forEach(cn -> {
+      Files.walk(system.getPath("/")).filter(p -> p.toString().endsWith(".class") && Stream.of("/paulscode", "/com/jcraft").noneMatch(s -> p.toString().startsWith(s))).map(thr(path -> parseClass(path, 0))).forEach(cn -> {
         cn.methods.forEach(mn -> {
           List<String> paramNames = nameParams(mn.desc);
           List<ParameterNode> params = new ArrayList<>();

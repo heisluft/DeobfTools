@@ -106,9 +106,7 @@ public final class MappingsBuilder {
    * @param exceptions the list of exceptions to add
    */
   public void addExceptions(String className, String methodName, String methodDesc, Collection<String> exceptions) {
-    MdExtra mdExtra =
-    mappings.extraData.computeIfAbsent(className, _k -> new HashMap<>()).computeIfAbsent(new MdMeta(methodName, methodDesc), _k -> new MdExtra());
-    mdExtra.exceptions.addAll(exceptions);
+    mappings.extraData.computeIfAbsent(className, _k -> new HashMap<>()).computeIfAbsent(new MdMeta(methodName, methodDesc), _k -> new MdExtra()).exceptions.addAll(exceptions);
   }
 
   /**

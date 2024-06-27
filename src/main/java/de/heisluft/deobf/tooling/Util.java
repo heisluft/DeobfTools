@@ -5,6 +5,7 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.ClassNode;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -14,7 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.function.Predicate;
-import java.util.stream.Stream;
+import java.util.zip.ZipFile;
 
 /**
  * This Interface provides convenience methods to its implementors
@@ -71,8 +72,9 @@ public interface Util {
    * @throws IOException if any of the jars classes could not be parsed
    */
   default Map<String, ClassNode> parseClasses(Path path) throws IOException {
-    return parseClasses(path, Collections.emptyList());
+    return parseClasses(path, Collections.emptyList(), 0);
   }
+
   /**
    * Parses all class files from a given jar file and groups them by their names, excluding all files whose path start
    * with any of the strings provided by the list of ignored paths.
@@ -81,19 +83,27 @@ public interface Util {
    *     the path to parse from
    * @param ignored
    *     a list of strings to exclude a class from being parsed if its path starts with any of the given patterns.
+   * @param parseFlags
+   *     the flags passed to the class reader
    * @return the resulting map, keys are ClassNode#name, values are the class nodes themselves
    * @throws IOException if any of the jars classes could not be parsed
    */
-  default Map<String, ClassNode> parseClasses(Path path, List<String> ignored) throws IOException {
+  default Map<String, ClassNode> parseClasses(Path path, List<String> ignored, int parseFlags) throws IOException {
     Map<String, ClassNode> result = new HashMap<>();
-    try(FileSystem fs = createFS(path); Stream<Path> stream = Files.walk(fs.getPath("/"))) {
-      stream.filter(this::hasClassExt).filter(p -> ignored.stream().noneMatch(p.toString()::startsWith)).map(p -> {
-        try {
-          return this.parseClass(p);
-        } catch (IOException e) {
-          throw new UncheckedIOException(e);
-        }
-      }).forEach(c -> result.put(c.name, c));
+    try(ZipFile zf = new ZipFile(path.toFile())) {
+      zf.stream()
+          .filter(e -> ignored.stream().noneMatch(e.getName()::startsWith) && e.getName().endsWith(".class"))
+          .map(e -> {
+            try(InputStream is = zf.getInputStream(e)) {
+              ClassReader cr = new ClassReader(is);
+              ClassNode node = new ClassNode(Opcodes.ASM9);
+              cr.accept(node, parseFlags);
+              return node;
+            } catch(IOException ex) {
+              throw new UncheckedIOException(ex);
+            }
+          })
+          .forEach(n -> result.put(n.name, n));
     } catch (UncheckedIOException e) {
       throw new IOException(e.getCause()); // rethrow the lambdas IOException
     }
@@ -128,29 +138,19 @@ public interface Util {
    *
    * @param path
    *     the path to parse
+   * @param parseFlags
+   *     the flags passed to the class reader
    *
    * @return the parsed node
    *
    * @throws IOException
    *     if the path could not be read
    */
-  default ClassNode parseClass(Path path) throws IOException {
+  default ClassNode parseClass(Path path, int parseFlags) throws IOException {
     ClassReader cr = new ClassReader(Files.readAllBytes(path));
-    ClassNode result = new ClassNode(Opcodes.ASM7);
-    cr.accept(result, 0);
+    ClassNode result = new ClassNode(Opcodes.ASM9);
+    cr.accept(result, parseFlags);
     return result;
-  }
-
-  /**
-   * Returns whether a given Class has an the .class file extension
-   *
-   * @param path
-   *     the path to test
-   *
-   * @return whether a given path has a class file extension
-   */
-  default boolean hasClassExt(Path path) {
-    return path.toString().endsWith(".class");
   }
 
   /**
@@ -184,5 +184,4 @@ public interface Util {
   default <T> Predicate<T> not(Predicate<T> inverted) {
     return inverted.negate();
   }
-
 }

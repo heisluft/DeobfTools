@@ -458,8 +458,10 @@ public class InnerClassDetector implements Util, MappingsProvider {
       }
     });
 
-    System.out.println("Anons: " + anonInstanceClasses);
-    System.out.println("Safe NonAnons: " + namedInstanceClasses);
+    System.out.println("Detected Instance Anonymous Classes:");
+    anonInstanceClasses.forEach((k, v) -> System.out.println(k + ": " + v));
+    System.out.println("Named Instance Inner Classes:");
+    namedInstanceClasses.forEach((k, v) -> System.out.println(k + ": " + v));
 
     anonInstanceClasses.forEach((outer, method2Inners) -> {
       dirtyClasses.add(outer);
