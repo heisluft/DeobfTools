@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.ServiceLoader;
 
 /**
- * This Class is the main interface for fetching and using MappingsHandler instances
+ * This Class is the main interface for fetching and using MappingsHandler instances.
  * The builtin MappingsHandlers are:
  * <ol>
  *   <li>Fergie, handling .frg files and "frg"</li>
@@ -19,13 +19,14 @@ import java.util.ServiceLoader;
  */
 public final class MappingsHandlers {
 
-  /**
-   * Whether Handlers have been fetched
-   */
+  /** This class should not be instantiated. */
+  private MappingsHandlers() {
+    throw new UnsupportedOperationException();
+  }
+
+  /** Whether Handlers have been fetched. */
   private static boolean hasFetched = false;
-  /**
-   * All gathered MappingsHandler instances mapped by their handled fileExtension
-   */
+  /** All gathered MappingsHandler instances mapped by their handled fileExtension. */
   private static final Map<String, MappingsHandler> HANDLERS = new HashMap<>();
 
   /**
@@ -51,7 +52,8 @@ public final class MappingsHandlers {
    */
   private static void checkInit() {
     if (hasFetched) return;
-    ServiceLoader.load(MappingsHandler.class).forEach(m -> HANDLERS.put(m.fileExt(), m));
+    ServiceLoader.load(MappingsHandler.class)
+        .forEach(m -> m.fileExts().forEach(ext -> HANDLERS.put(ext, m.withFileExt(ext))));
     hasFetched = true;
   }
 

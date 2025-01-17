@@ -8,15 +8,23 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
-public class EXCMappingsHandler implements MappingsHandler {
+/**
+ * A MappingsHandler for reading EXC files. These contain Parameter and exception data only.
+ */
+public final class EXCMappingsHandler implements MappingsHandler {
   @Override
   public Mappings parseMappings(Path input) throws IOException {
     MappingsBuilder b = new MappingsBuilder();
     List<String> lines = Files.readAllLines(input);
     for (String line : lines) {
-      int dot = line.indexOf('.'), openBrace = line.indexOf('('), eqSign = line.indexOf('='), vertBar = line.indexOf('|');
+      int dot = line.indexOf('.'),
+          openBrace = line.indexOf('('),
+          eqSign = line.indexOf('='),
+          vertBar = line.indexOf('|');
       String cName = line.substring(0, dot);
       String mName = line.substring(dot + 1, openBrace);
       String mDesc = line.substring(openBrace, eqSign);
@@ -27,8 +35,8 @@ public class EXCMappingsHandler implements MappingsHandler {
   }
 
   @Override
-  public String fileExt() {
-    return "exc";
+  public Collection<String> fileExts() {
+    return Collections.singleton( "exc");
   }
 
   @Override

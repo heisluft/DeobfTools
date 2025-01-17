@@ -2,17 +2,24 @@ plugins {
   id 'java'
   id 'signing'
   id 'maven-publish'
+  id 'checkstyle'
 }
 
-java.toolchain.languageVersion.set(JavaLanguageVersion.of(8))
+java {
+  toolchain.languageVersion.set(JavaLanguageVersion.of(8))
+  withSourcesJar()
+  withJavadocJar()
+}
 
-group 'de.heisluft.deobf.lib'
-version '1.0.2'
+group = 'de.heisluft.deobf.lib'
+version = '1.2.0-beta'
 
-tasks.register('sourcesJar', Jar.class) {
-  dependsOn(classes)
-  archiveClassifier.set 'sources'
-  from sourceSets.main.allSource
+repositories {
+  mavenCentral()
+}
+
+checkstyle {
+  configFile = project.file("checkstyle.xml")
 }
 
 tasks.withType(JavaCompile.class).configureEach {
@@ -27,12 +34,12 @@ jar.manifest.attributes([
   'Specification-Vendor': group,
   'Implementation-Title': 'Extensible Deobfuscation Mappings Library',
   'Implementation-Version': version,
-  'Implementation-Vendor': group
+  'Implementation-Vendor': group,
 ])
 
 publishing {
   repositories.maven {
-    url mavenUrl
+    url = mavenUrl
     credentials {
       username = mavenUsername
       password = mavenPassword
@@ -41,7 +48,6 @@ publishing {
   }
   publications.create('maven', MavenPublication) {
     it.from components.getByName('java')
-    it.artifact sourcesJar
   }
 }
 

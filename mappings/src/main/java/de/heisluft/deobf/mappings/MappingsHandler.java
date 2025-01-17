@@ -2,6 +2,8 @@ package de.heisluft.deobf.mappings;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Collection;
+import java.util.Collections;
 
 /**
  * A MappingsHandler is a class capable of parsing mapping files.
@@ -35,13 +37,44 @@ public interface MappingsHandler {
   }
 
   /**
-   * Returns the file extension handled by this instance.
+   * Returns the file extension handled by this instance. Each entry will be used to parameterize
+   * the instance with {@link #withFileExt(String)}
    *
    * @return the file extension, never {@code null}
+   *
+   * @deprecated use {@link #fileExts()} instead. This method will be removed in a future release,
+   * only override for backwards compatibility (using your own handler with an older lib version)
    */
-  String fileExt();
+  @Deprecated
+  default String fileExt() {
+    throw new UnsupportedOperationException();
+  }
 
   /**
+   * Parameterizes this Service with one of the file extensions returned by {@link #fileExts()}.
+   * Handlers providing multiple extensions might want to return new instances here
+   *
+   * @param fileExt the file extension to use
+   * @return a maybe new MappingsHandler instance, never {@code null}.
+   */
+  default MappingsHandler withFileExt(String fileExt) {
+    return this;
+  }
+
+  /**
+   * Returns a collection of handled file extensions. NOTE: Implementations are strongly encouraged
+   * to override this method to ensure forward compatability, this method WILL become abstract in
+   * a future release.
+   *
+   * @return a collection of file extensions handled by this instance, never {@code null}
+   */
+  default Collection<String> fileExts() {
+    return Collections.singleton(fileExt());
+  }
+
+  /**
+   * Checks whether this handler can (de-)serialize exception data.
+   *
    * @return whether this handler can (de-)serialize exception data
    */
   default boolean supportsExceptionData() {
@@ -49,6 +82,8 @@ public interface MappingsHandler {
   }
 
   /**
+   * Checks whether this handler can (de-)serialize parameter mappings.
+   *
    * @return whether this handler can (de-)serialize parameter mappings
    */
   default boolean supportsParameterData() {
@@ -56,6 +91,17 @@ public interface MappingsHandler {
   }
 
   /**
+   * Checks whether this handler can distinguish fields by their descriptors.
+   *
+   * @return whether this handler can distinguish fields by their descriptors
+   */
+  default boolean supportsFieldDescriptors() {
+    return false;
+  }
+
+  /**
+   * Checks whether this handler can (de-)serialize class, method and field mappings.
+   *
    * @return whether this handler can (de-)serialize class, method and field mappings
    */
   default boolean supportsRemappingData() {

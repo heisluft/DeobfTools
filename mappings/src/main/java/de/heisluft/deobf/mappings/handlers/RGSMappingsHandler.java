@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -21,8 +23,8 @@ import java.util.List;
 public final class RGSMappingsHandler implements MappingsHandler {
 
   @Override
-  public String fileExt() {
-    return "rgs";
+  public Collection<String> fileExts() {
+    return Collections.singleton("rgs");
   }
 
   @Override
@@ -41,19 +43,16 @@ public final class RGSMappingsHandler implements MappingsHandler {
           globs.add(words[1]);
           break;
         case ".class_map":
-          if(words.length < 3)
-            throw new IllegalArgumentException("Error on line '" + line + "'. Expected at least 2 arguments, got" + (words.length - 1));
+          if(words.length < 3) throw new IllegalArgumentException(argMismatch(line, 2, words.length - 1));
           mappings.addClassMapping(words[1], words[2]);
           break;
         case ".field_map":
-          if(words.length < 3)
-            throw new IllegalArgumentException("Error on line '" + line + "'. Expected at least 2 arguments, got" + (words.length - 1));
+          if(words.length < 3) throw new IllegalArgumentException(argMismatch(line, 2, words.length - 1));
           String[] fd = splitAt(words[1], words[1].lastIndexOf('/'));
           mappings.addFieldMapping(fd[0], fd[1], words[2]);
           break;
         case ".method_map":
-          if(words.length < 4)
-            throw new IllegalArgumentException("Error on line '" + line + "'. Expected at least 3 arguments, got" + (words.length - 1));
+          if(words.length < 4) throw new IllegalArgumentException(argMismatch(line, 3, words.length - 1));
           String[] md = splitAt(words[1], words[1].lastIndexOf('/'));
           mappings.addMethodMapping(md[0], md[1], words[2], words[3]);
           break;
@@ -65,6 +64,10 @@ public final class RGSMappingsHandler implements MappingsHandler {
       mappings.packages.put(regex, newPackage);
     }
     return mappings;
+  }
+
+  private String argMismatch(String line, int expected, int actual) {
+    return "Error on line '" + line + "'. Expected at least " + expected + " arguments, got " + actual;
   }
 
   /**

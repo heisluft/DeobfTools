@@ -14,7 +14,7 @@ This library only requires a working Java 8 installation
 
 ## How To Use
 ### Dependency
-The jars are deployed at heisluft.de/maven/. It is assumed you know how to add maven repo dependencies
+The jars are deployed at https://heisluft.de/maven/ under the artifact name `de.heisluft.deobf.lib:mappings:{version}`. It is assumed you know how to add maven repo dependencies
 with your favourite build tool.
 
 ### Creating Mappings

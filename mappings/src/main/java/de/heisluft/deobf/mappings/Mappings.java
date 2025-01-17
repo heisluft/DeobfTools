@@ -1,8 +1,17 @@
 package de.heisluft.deobf.mappings;
 
+import de.heisluft.deobf.mappings.util.TetraConsumer;
 import de.heisluft.deobf.mappings.util.TriConsumer;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.PrimitiveIterator;
+import java.util.Set;
 import java.util.function.BiConsumer;
 
 /**
@@ -12,62 +21,123 @@ import java.util.function.BiConsumer;
  * Mappings are considered to be immutable, as there is no API exposing mutable data.
  * To create Mappings from outside the package, use {@link MappingsBuilder} instances.
  */
+//TODO: Merge capability of package relocations from RGSMappings
 public class Mappings {
 
   /**
-   * All primitive binary names
+   * An invalid descriptor is used here that won't confuse {@link #remapDescriptor(String)}.
+   * Fields will never actually have this type as this is disallowed per spec.
    */
-  private static final List<String> PRIMITIVES = Arrays.asList("B", "C", "D", "F", "I", "J", "S", "V", "Z");
+  protected static final String EMPTY_FIELD_DESCRIPTOR = "EF";
+
+  /** All primitive binary names. Includes the empty field descriptor. */
+  private static final List<String> PRIMITIVES = Arrays.asList(
+      "B", "C", "D", "F", "I", "J", "S", "V", "Z", EMPTY_FIELD_DESCRIPTOR
+  );
+
   /**
-   * All Class mappings, names are jvm names ('/' as delimiter) mapped as follows: classMame ->
-   * remappedClassName
+   * All Class mappings, names are jvm names ('/' as delimiter).
+   * Mapped as follows: classMame -> remappedClassName
    */
   protected final Map<String, String> classes = new HashMap<>();
-  /**
-   * All field mappings mapped as follows: className -> fieldName -> remappedName
-   */
-  protected final Map<String, Map<String, String>> fields = new HashMap<>();
-  /**
-   * All method mappings mapped as follows: className -> (methodName + methodDesc) -> remappedName
-   */
-  protected final Map<String, Map<MdMeta, String>> methods = new HashMap<>();
+
+  /** All field mappings mapped as follows: className -> (fieldName + fieldDesc) -> remappedName. */
+  protected final Map<String, Map<MemberData, String>> fields = new HashMap<>();
+
+  /** All method mappings mapped as follows: className -> (methodName + methodDesc) -> remappedName. */
+  protected final Map<String, Map<MemberData, String>> methods = new HashMap<>();
+
   /**
    * All exceptions and parameters added with the mappings, mapped by className + methodName + methodDesc
    * set of exception class names, list of parameter names. exception class names may or may not be already remapped
    */
-  protected final Map<String, Map<MdMeta, MdExtra>> extraData = new HashMap<>();
+  protected final Map<String, Map<MemberData, MdExtra>> extraData = new HashMap<>();
 
-  /**
-   * Mappings are not to be instantiated outside the Package, use {@link MappingsBuilder#build()}
-   */
+  /** Mappings are not to be instantiated outside the Package, use {@link MappingsBuilder#build()}. */
   protected Mappings() {}
 
   /**
    * Clone the given mappings. Values are deep-cloned, as the backing Maps are often mutable.
    *
-   * @param toClone the mappings t
+   * @param toClone the mappings to clone
    */
   protected Mappings(Mappings toClone) {
     classes.putAll(toClone.classes);
     toClone.fields.forEach((k,v) -> fields.computeIfAbsent(k, _k -> new HashMap<>()).putAll(v));
     toClone.methods.forEach((k,v) -> methods.computeIfAbsent(k, _k -> new HashMap<>()).putAll(v));
-    toClone.extraData.forEach((k, v) -> v.forEach((mdMeta, mdExtra) -> extraData.computeIfAbsent(k, _k -> new HashMap<>()).computeIfAbsent(mdMeta, _k -> new MdExtra(mdExtra))));
+    toClone.extraData.forEach((k, v) ->
+        v.forEach((memberData, mdExtra) ->
+            extraData.computeIfAbsent(k, _k -> new HashMap<>())
+                .computeIfAbsent(memberData, _k -> new MdExtra(mdExtra))));
   }
 
+  /**
+   * Applies a method to all class mappings.
+   *
+   * @param consumer the function to apply
+   */
   public void forAllClasses(BiConsumer<String, String> consumer) {
     classes.forEach(consumer);
   }
 
-  public void forAllFields(TriConsumer<String, String, String> consumer) {
-    fields.forEach((s, stringStringMap) -> stringStringMap.forEach((s1, s2) -> consumer.accept(s, s1, s2)));
-  }
-
-  public void forAllMethods(TriConsumer<String, MdMeta, String> consumer) {
-    methods.forEach((s, mdMetaStringMap) -> mdMetaStringMap.forEach((mdMeta, s1) -> consumer.accept(s, mdMeta, s1)));
+  /**
+   * Applies a method to all field mappings.
+   *
+   * @param consumer the function to apply
+   */
+  public final void forAllFields(TetraConsumer<String, String, String, String> consumer) {
+    fields.forEach((s, members) ->
+        members.forEach((data, remapped) ->
+            consumer.accept(s, data.name, data.desc, remapped)
+        )
+    );
   }
 
   /**
-   * Retrieves a mapped name for a given class, giving back the className as fallback Use in
+   * Applies a method to all method mappings.
+   *
+   * @param consumer the function to apply
+   */
+  public final void forAllMethods(TetraConsumer<String, String, String, String> consumer) {
+    methods.forEach((s, members) ->
+        members.forEach((data, remapped) ->
+            consumer.accept(s, data.name, data.desc, remapped)
+        )
+    );
+  }
+
+  /**
+   * Applies a method to all field mappings.
+   *
+   * @param consumer the function to apply
+   * @deprecated use {@link #forAllFields(TetraConsumer)} instead.
+   */
+  @Deprecated
+  public void forAllFields(TriConsumer<String, String, String> consumer) {
+    fields.forEach((s, members) ->
+        members.forEach((data, remapped) ->
+            consumer.accept(s, data.name, remapped)
+        )
+    );
+  }
+
+  /**
+   * Applies a method to all method mappings.
+   *
+   * @param consumer the function to apply
+   * @deprecated use {@link #forAllMethods(TetraConsumer)} instead.
+   */
+  @Deprecated
+  public void forAllMethods(TriConsumer<String, MemberData, String> consumer) {
+    methods.forEach((s, members) ->
+        members.forEach((data, remapped) ->
+            consumer.accept(s, data, remapped)
+        )
+    );
+  }
+
+  /**
+   * Retrieves a mapped name for a given class, giving back the className as fallback. Use in
    * conjunction with {@link Mappings#hasClassMapping(String)}
    *
    * @param className
@@ -94,7 +164,27 @@ public class Mappings {
    * @return the mapped name or {@code null} if not found
    */
   public String getMethodName(String className, String methodName, String methodDescriptor) {
-    return methods.getOrDefault(className, Collections.emptyMap()).get(new MdMeta(methodName, methodDescriptor));
+    return methods.getOrDefault(className, Collections.emptyMap())
+        .get(new MemberData(methodName, methodDescriptor));
+  }
+
+  /**
+   * Retrieves a mapped name for a given field.
+   * NOTE: This will not find a mapping if the mappings are field-descriptor sensitive.
+   *
+   * @param className
+   *     the name of the class containing the field
+   * @param fieldName
+   *     The fields name
+   *
+   * @return the mapped name or {@code null} if not found
+   *
+   * @deprecated use {@link #getFieldName(String, String, String)} instead
+   */
+  @Deprecated
+  public String getFieldName(String className, String fieldName) {
+    return fields.getOrDefault(className, Collections.emptyMap())
+        .get(new MemberData(fieldName, EMPTY_FIELD_DESCRIPTOR));
   }
 
   /**
@@ -104,15 +194,21 @@ public class Mappings {
    *     the name of the class containing the field
    * @param fieldName
    *     The fields name
+   * @param fieldDescriptor
+   *     The fields descriptor
    *
    * @return the mapped name or {@code null} if not found
    */
-  public String getFieldName(String className, String fieldName) {
-    return fields.getOrDefault(className, Collections.emptyMap()).get(fieldName);
+  public final String getFieldName(String className, String fieldName, String fieldDescriptor) {
+    Map<MemberData, String> fields = this.fields.getOrDefault(className, Collections.emptyMap());
+    return fields.getOrDefault(
+        new MemberData(fieldName, fieldDescriptor),
+        fields.get(new MemberData(fieldName, EMPTY_FIELD_DESCRIPTOR))
+    );
   }
 
   /**
-   * Returns if the mappings contain a mapping for a specific class name
+   * Checks if the mappings contain a mapping for a specific class name.
    *
    * @param className
    *     the class name to test for
@@ -124,7 +220,7 @@ public class Mappings {
   }
 
   /**
-   * Returns if the mappings contain a mapping for a specific method.
+   * Checks if the mappings contain a mapping for a specific method.
    *
    * @param className
    *     the name of the class declaring the method
@@ -136,11 +232,13 @@ public class Mappings {
    * @return true if there is a mapping for the method, false otherwise
    */
   public boolean hasMethodMapping(String className, String methodName, String methodDescriptor) {
-    return methods.getOrDefault(className, Collections.emptyMap()).containsKey(new MdMeta(methodName, methodDescriptor));
+    return methods.getOrDefault(className, Collections.emptyMap()).containsKey(
+        new MemberData(methodName, methodDescriptor)
+    );
   }
 
   /**
-   * Returns if the mappings contain a mapping for a specific field
+   * Checks if the mappings contain a mapping for a specific field.
    *
    * @param className
    *     the name of the class declaring the field
@@ -148,9 +246,32 @@ public class Mappings {
    *     the name of the field
    *
    * @return true if there is a mapping for {@code className}, false otherwise
+   *
+   * @deprecated use {@link #hasFieldMapping(String, String, String)} instead
    */
+  @Deprecated
   public boolean hasFieldMapping(String className, String fieldName) {
-    return fields.getOrDefault(className, Collections.emptyMap()).containsKey(fieldName);
+    return fields.getOrDefault(className, Collections.emptyMap()).containsKey(
+        new MemberData(fieldName, EMPTY_FIELD_DESCRIPTOR)
+    );
+  }
+
+  /**
+   * Checks if the mappings contain a mapping for a specific field.
+   *
+   * @param className
+   *     the name of the class declaring the field
+   * @param fieldName
+   *     the name of the field
+   * @param fieldDescriptor
+   *     the descriptor of the field
+   *
+   * @return true if there is a mapping for {@code className}, false otherwise
+   */
+  public final boolean hasFieldMapping(String className, String fieldName, String fieldDescriptor) {
+    Map<MemberData, String> fields = this.fields.getOrDefault(className, Collections.emptyMap());
+    return fields.containsKey(new MemberData(fieldName, fieldDescriptor))
+        || fields.containsKey(new MemberData(fieldName, EMPTY_FIELD_DESCRIPTOR));
   }
 
   /**
@@ -167,7 +288,9 @@ public class Mappings {
    * @return a set of all exceptions for this method, never {@code null}
    */
   public Set<String> getExceptions(String className, String methodName, String methodDescriptor) {
-    return extraData.getOrDefault(className, Collections.emptyMap()).getOrDefault(new MdMeta(methodName, methodDescriptor), MdExtra.EMPTY).exceptions;
+    return extraData.getOrDefault(className, Collections.emptyMap()).getOrDefault(
+        new MemberData(methodName, methodDescriptor), MdExtra.EMPTY
+    ).exceptions;
   }
 
   /**
@@ -180,14 +303,16 @@ public class Mappings {
     Mappings mappings = new Mappings();
     classes.forEach((name, renamed) -> mappings.classes.put(renamed, name));
     fields.forEach((className, nameMap) -> {
-      Map<String, String> reversedNames = new HashMap<>();
-      nameMap.forEach((name, renamed) -> reversedNames.put(renamed, name));
+      Map<MemberData, String> reversedNames = new HashMap<>();
+      nameMap.forEach((nameDescTuple, renamed) -> reversedNames.put(
+          new MemberData(renamed, remapDescriptor(nameDescTuple.desc)), nameDescTuple.name)
+      );
       mappings.fields.put(getClassName(className), reversedNames);
     });
     methods.forEach((className, nameMap) -> {
-      Map<MdMeta, String> reversedNames = new HashMap<>();
+      Map<MemberData, String> reversedNames = new HashMap<>();
       nameMap.forEach((nameDescTuple, renamed) ->
-        reversedNames.put(new MdMeta(renamed, remapDescriptor(nameDescTuple.desc)), nameDescTuple.name)
+        reversedNames.put(new MemberData(renamed, remapDescriptor(nameDescTuple.desc)), nameDescTuple.name)
       );
       mappings.methods.put(getClassName(className), reversedNames);
     });
@@ -195,26 +320,29 @@ public class Mappings {
   }
 
   /**
-   * Cleans up the mappings, removing all entries mapping to themselves
+   * Cleans up the mappings, removing all entries mapping to themselves.
    *
    * @return the cleaned up mappings
    */
   public Mappings clean() {
     Mappings mappings = new Mappings();
-    classes.entrySet().stream().filter(e -> e.getKey().equals(e.getValue())).forEach(e -> mappings.classes.put(e.getKey(), e.getValue()));
+    classes.entrySet().stream().filter(e -> e.getKey().equals(e.getValue()))
+        .forEach(e -> mappings.classes.put(e.getKey(), e.getValue()));
     fields.forEach((className, map) -> {
-      if(map.entrySet().stream().anyMatch(e -> e.getKey().equals(e.getValue()))) return;
-      Map<String, String> values = new HashMap<>();
-      map.forEach((fieldName, remappedFieldName) -> {
-        if(!fieldName.equals(remappedFieldName)) values.put(fieldName, remappedFieldName);
+      if(map.entrySet().stream().anyMatch(e -> e.getKey().name.equals(e.getValue()))) return;
+      Map<MemberData, String> values = new HashMap<>();
+      map.forEach((tuple, remappedFieldName) -> {
+        if(!tuple.name.equals(remappedFieldName)) values.put(tuple, remappedFieldName);
       });
       mappings.fields.put(className, values);
     });
     methods.forEach((className, map) -> {
-      if(map.entrySet().stream().allMatch(e -> e.getKey().name.equals(e.getValue()) && !extraData.containsKey(className + e.getKey()))) return;
-      Map<MdMeta, String> values = new HashMap<>();
+      if(map.entrySet().stream().allMatch(e -> e.getKey().name.equals(e.getValue())
+          && !extraData.containsKey(className + e.getKey()))) return;
+      Map<MemberData, String> values = new HashMap<>();
       map.forEach((tuple, remappedMethodName) -> {
-        if(!tuple.name.equals(remappedMethodName) || extraData.containsKey(className + tuple.name + tuple.desc)) values.put(tuple, remappedMethodName);
+        if(!tuple.name.equals(remappedMethodName) || extraData.containsKey(className + tuple.name + tuple.desc))
+          values.put(tuple, remappedMethodName);
       });
       mappings.methods.put(className, values);
     });
@@ -239,26 +367,27 @@ public class Mappings {
     });
     fields.keySet().forEach(key -> {
       if(!other.fields.containsKey(key)) return;
-      Map<String, String> values = new HashMap<>();
-      fields.get(key).forEach((name, renamedFd) -> {
-        String toRenamedFd = other.fields.get(key).get(name);
+      Map<MemberData, String> values = new HashMap<>();
+      fields.get(key).forEach((tuple, renamedFd) -> {
+        String toRenamedFd = other.fields.get(key).get(tuple);
         if(!renamedFd.equals(toRenamedFd))
-          values.put(renamedFd, toRenamedFd);
+          values.put(new MemberData(renamedFd, remapDescriptor(tuple.desc)), toRenamedFd);
       });
       mappings.fields.put(getClassName(key), values);
     });
     methods.keySet().forEach(key -> {
       if(!other.methods.containsKey(key)) return;
-      Map<MdMeta, String> values = new HashMap<>();
-      methods.get(key).forEach((tuple2, renamedMd) -> {
-        String toRenamedMd = other.methods.get(key).get(tuple2);
+      Map<MemberData, String> values = new HashMap<>();
+      methods.get(key).forEach((tuple, renamedMd) -> {
+        String toRenamedMd = other.methods.get(key).get(tuple);
         if(!renamedMd.equals(toRenamedMd))
-          values.put(new MdMeta(renamedMd, remapDescriptor(tuple2.desc)), toRenamedMd);
+          values.put(new MemberData(renamedMd, remapDescriptor(tuple.desc)), toRenamedMd);
       });
       mappings.methods.put(getClassName(key), values);
     });
     return mappings;
   }
+
   /**
    * Generates Mappings Converting between these mappings and other.
    * Consider two Mappings a->b and b->c, the returned mappings represent a->c
@@ -272,17 +401,19 @@ public class Mappings {
     Mappings mappings = new Mappings();
     classes.forEach((name, renamed) -> mappings.classes.put(name, other.getClassName(renamed)));
     fields.forEach((className, nameMap) -> {
-      Map<String, String> otherNameMap = other.fields.getOrDefault(getClassName(className), new HashMap<>());
-      Map<String, String> resultingNames = new HashMap<>();
-      nameMap.forEach((name, renamed) -> resultingNames.put(name, otherNameMap.getOrDefault(renamed, renamed)));
+      Map<MemberData, String> otherNameMap = other.fields.getOrDefault(getClassName(className), new HashMap<>());
+      Map<MemberData, String> resultingNames = new HashMap<>();
+      nameMap.forEach((tuple, renamed) -> resultingNames.put(
+          tuple, otherNameMap.getOrDefault(new MemberData(renamed, remapDescriptor(tuple.desc)), renamed)
+      ));
       mappings.fields.put(className, resultingNames);
     });
     methods.forEach((className, nameMap) -> {
-      Map<MdMeta, String> otherNameMap = other.methods.getOrDefault(getClassName(className), new HashMap<>());
-      Map<MdMeta, String> resultingNames = new HashMap<>();
-      nameMap.forEach((nameDescTuple, renamed) ->
-          resultingNames.put(nameDescTuple, otherNameMap.getOrDefault(new MdMeta(renamed, remapDescriptor(nameDescTuple.desc)), renamed))
-      );
+      Map<MemberData, String> otherNameMap = other.methods.getOrDefault(getClassName(className), new HashMap<>());
+      Map<MemberData, String> resultingNames = new HashMap<>();
+      nameMap.forEach((tuple, renamed) -> resultingNames.put(
+          tuple, otherNameMap.getOrDefault(new MemberData(renamed, remapDescriptor(tuple.desc)), renamed)
+      ));
       mappings.methods.put(className, resultingNames);
     });
     return mappings;
@@ -298,19 +429,29 @@ public class Mappings {
   public Mappings join(Mappings other) {
     Mappings mappings = new Mappings(other);
     mappings.classes.putAll(classes);
-    fields.forEach((k,v) -> mappings.fields.computeIfAbsent(k, _k -> new HashMap<>()).putAll(v));
-    methods.forEach((k,v) -> mappings.methods.computeIfAbsent(k, _k -> new HashMap<>()).putAll(v));
-    extraData.forEach((k, v) -> v.forEach((mdMeta, mdExtra) -> {
-      MdExtra extra = extraData.computeIfAbsent(k, _k -> new HashMap<>()).computeIfAbsent(mdMeta, _k -> new MdExtra());
-      extra.exceptions.addAll(mdExtra.exceptions);
-      extra.parameters.clear();
-      extra.parameters.addAll(mdExtra.parameters);
+    fields.forEach(
+        (k,v) ->
+            mappings.fields.computeIfAbsent(k, _k -> new HashMap<>()).putAll(v)
+    );
+    methods.forEach(
+        (k,v) ->
+            mappings.methods.computeIfAbsent(k, _k -> new HashMap<>()).putAll(v)
+    );
+    extraData.forEach(
+        (k, v) -> v.forEach((memberData, mdExtra) -> {
+          MdExtra extra = extraData.computeIfAbsent(k, _k -> new HashMap<>()).computeIfAbsent(
+              memberData, _k -> new MdExtra()
+          );
+          extra.exceptions.addAll(mdExtra.exceptions);
+          extra.parameters.clear();
+          extra.parameters.addAll(mdExtra.parameters);
     }));
     return mappings;
   }
 
   /**
-   * Remaps a given descriptor with these mappings
+   * Remaps a given descriptor with these mappings.
+   *
    * @param descriptor the descriptor to remap
    * @return the remapped descriptor
    */
@@ -373,7 +514,7 @@ public class Mappings {
   }
 
   /**
-   * Joins the given Collection of characters to a string
+   * Joins the given Collection of characters to a string.
    *
    * @param chars
    *     the chars to be joined
