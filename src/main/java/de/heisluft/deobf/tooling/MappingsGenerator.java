@@ -4,6 +4,7 @@ import de.heisluft.deobf.mappings.Mappings;
 import de.heisluft.deobf.mappings.MappingsBuilder;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
@@ -83,6 +84,7 @@ public class MappingsGenerator implements Util {
   private void gatherInheritedMethods(String cls, String addTo) {
     if(cls == null) return;
     ClassNode node = classNodes.containsKey(cls) ? classNodes.get(cls) : provider.getClassNode(cls);
+    if(node == null) return;
     for(MethodNode m : node.methods)
       if(Util.hasNone(m.access, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE, Opcodes.ACC_STATIC))
         inheritableMethods.get(addTo).add(m.name + m.desc);
@@ -240,11 +242,11 @@ public class MappingsGenerator implements Util {
         if(builder.hasFieldMapping(cn.name, fn.name)) return;
         // Automatically emit enum $VALUES mapping
         if(cn.superName.equals(Type.getInternalName(Enum.class)) && fn.desc.equals("[L" + cn.name + ";") && hasAll(fn.access, Opcodes.ACC_STATIC, Opcodes.ACC_SYNTHETIC, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE)) {
-          builder.addFieldMapping(cn.name, fn.name, "$VALUES");
+          builder.addFieldMapping(cn.name, fn.name, fn.desc, "$VALUES");
         }
         // Dont generate Mappings for serialVersionUID
         else if(!(fn.name.equals("serialVersionUID") && fn.desc.equals("J") && hasAll(fn.access, Opcodes.ACC_STATIC, Opcodes.ACC_FINAL) && isSerializable(cn)))
-          builder.addFieldMapping(cn.name, fn.name, "fd_" + fieldCounter.getAndIncrement() + "_" + fn.name);
+          builder.addFieldMapping(cn.name, fn.name, fn.desc, "fd_" + fieldCounter.getAndIncrement() + "_" + fn.name);
       });
       Set<String> superMDs = inheritableMethods.getOrDefault(cn.superName, new HashSet<>());
       Set<String> ifaceMDs = cn.interfaces.stream().filter(inheritableMethods::containsKey).map(inheritableMethods::get).flatMap(Collection::stream).collect(Collectors.toSet());
