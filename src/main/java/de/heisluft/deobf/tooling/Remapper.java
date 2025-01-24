@@ -271,6 +271,8 @@ public class Remapper implements Util {
           if(ins instanceof FieldInsnNode) {
             FieldInsnNode fieldNode = (FieldInsnNode) ins;
             if(classNodes.containsKey(fieldNode.owner)) fieldNode.name = remapFieldName(classNodes.get(fieldNode.owner), fieldNode.name, fieldNode.desc, mappings);
+            //If we cant go for inheritance (e.g. the target class is outside the remapped classpath), try to directly match the field name
+            else if(mappings.hasFieldMapping(fieldNode.owner, fieldNode.name, fieldNode.desc)) fieldNode.name = mappings.getFieldName(fieldNode.owner, fieldNode.name, fieldNode.desc);
             fieldNode.desc = mappings.remapDescriptor(fieldNode.desc);
             if(fieldNode.owner.startsWith("[")) fieldNode.owner = mappings.remapDescriptor(fieldNode.owner);
             else fieldNode.owner = mappings.getClassName(fieldNode.owner);
@@ -279,6 +281,8 @@ public class Remapper implements Util {
             MethodInsnNode methodNode = (MethodInsnNode) ins;
             methodNode.name = classNodes.containsKey(methodNode.owner) ? remapMethodName(classNodes.get(methodNode.owner), methodNode.name, methodNode.desc, mappings) : methodNode.name;
             if(methodNode.owner.startsWith("[")) methodNode.owner = mappings.remapDescriptor(methodNode.owner);
+              //If we cant go for inheritance (e.g. the target class is outside the remapped classpath), try to directly match the method name
+            else if(mappings.hasMethodMapping(methodNode.owner, methodNode.name, methodNode.desc)) methodNode.name = mappings.getMethodName(methodNode.owner, methodNode.name, methodNode.desc);
             else methodNode.owner = mappings.getClassName(methodNode.owner);
             methodNode.desc = mappings.remapDescriptor(methodNode.desc);
           }
