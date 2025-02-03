@@ -15,8 +15,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import static de.heisluft.function.FunctionalUtil.thrc;
-
 /**
  * A tool for applying AccessTransformers
  */
@@ -60,13 +58,12 @@ public class ATApplicator implements Util {
     classes.values().forEach(cn -> cn.methods.forEach(mn -> mn.access = findAccess(cn, mn.name, mn.desc, mn.access)));
     Files.write(output, new byte[]{0x50, 0x4B, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00});
     try(FileSystem fs = createFS(output)) {
-      classes.values().forEach(thrc(n -> {
+      for(ClassNode n : classes.values()) {
         ClassWriter w = new ClassWriter(0);
         n.accept(w);
-        if(n.name.contains("/"))
-          Files.createDirectories(fs.getPath(n.name.substring(0, n.name.lastIndexOf('/'))));
+        if(n.name.contains("/")) Files.createDirectories(fs.getPath(n.name.substring(0, n.name.lastIndexOf('/'))));
         Files.write(fs.getPath(n.name + ".class"), w.toByteArray());
-      }));
+      }
     }
   }
 

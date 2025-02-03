@@ -1,5 +1,8 @@
 package de.heisluft.deobf.tooling;
 
+import de.heisluft.cli.simpleopt.OptionParseResult;
+import de.heisluft.cli.simpleopt.SubCommand;
+import de.heisluft.cli.simpleopt.OptionParser;
 import de.heisluft.deobf.mappings.Mappings;
 import de.heisluft.deobf.mappings.MappingsHandlers;
 import de.heisluft.deobf.mappings.MappingsHandler;
@@ -21,9 +24,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
-import static de.heisluft.function.FunctionalUtil.thrc;
+import static de.heisluft.cli.simpleopt.OptionDefinition.*;
 
 //TODO: Think about a clever way to restore generic signatures on fields and based on that, methods
 //TODO: Come up with an idea on how to restore generic signatures of obfuscated classes with the help of the specialized subclass bridge methods
@@ -36,143 +41,116 @@ public class Remapper implements Util {
 
   private final Map<String, ClassNode> classNodes = new HashMap<>();
 
-  public static void main(String[] args) {
-    if(args.length < 3
-        || !(args[0].equals("map") || args[0].equals("genReverseMappings")
-        || args[0].equals("remap") || args[0].equals("cleanMappings")
-        || args[0].equals("genMediatorMappings") || args[0].equals("genConversionMappings"))) {
-      System.out.println("Heislufts Remapping Service version 1.0\n A deobfuscator and mappings generator\n");
-      System.out.println("usage: Remapper <task> <input> <mappings> [options]");
-      System.out.println("List of valid tasks: ");
-      System.out.println("  map:");
-      System.out.println("    Generates obfuscation mappings from the <input> jar and writes them to <mappings>.");
-      System.out.println("  genReverseMappings:");
-      System.out.println("    Generates reverse obfuscation mappings from the <input> mappings and writes them to <mappings>.");
-      System.out.println("  remap:");
-      System.out.println("    Remaps the <input> jar with the specified <mappings> file and writes it to [output].");
-      System.out.println("    If the outputPath option is not specified, it will default to <input>-deobf.jar");
-      System.out.println("  cleanMappings:");
-      System.out.println("    Writes a clean version of the mappings at <input> to <mapping>");
-      System.out.println("  genMediatorMappings:");
-      System.out.println("    Writes mappings mapping the output of <input> to the output of <mappings>");
-      System.out.println("    to [output]");
-      System.out.println("  genConversionMappings:");
-      System.out.println("    Writes mappings mapping the input of <input> to the output of <mappings>");
-      System.out.println("    to [output]");
-      System.out.println("\nAvailable options are:");
-      System.out.println("  shorthand         long option                  description");
-      System.out.println("  -i pathsToIgnore  --ignorePaths=pathsToIgnore  A List of paths to ignore from the input jar.");
-      System.out.println("                                                 Multiple Paths are separated using ; (semicolon).");
-      System.out.println("                                                 These Paths are treated as wildcards.");
-      System.out.println("                                                 For example, -i /com;/org/unwanted/ would lead the");
-      System.out.println("                                                 program to exclude all paths starting with either");
-      System.out.println("                                                 '/com' or '/org/unwanted/' eg. '/com/i.class',");
-      System.out.println("                                                 '/computer.xml', '/org/unwanted/b.gif'. This option");
-      System.out.println("                                                 will be ignored for tasks only operating on mappings");
-      System.out.println("\n  -o outputPath      --outputPath=outputPath     Overrides the path where the remapped");
-      System.out.println("                                                 jar will be written to. This option will be ignored");
-      System.out.println("                                                 for 'map', 'genReverseMappings' and 'cleanMappings'.");
-      System.out.println("\n  -s mappingsPath    --supplement=mappingsPath   Valid only for 'map'. Provides supplementary");
-      System.out.println("                                                 mappings. For these, no new mappings will be");
-      System.out.println("                                                 generated, instead they will directly be merged into");
-      System.out.println("                                                 the output mappings file");
-      System.out.println("\n  -j jdkPath         --jdkPath=jdkPath            Valid only for 'map'. Path to JDK, used for");
-      System.out.println("                                                 inferring exceptions");
+  private static void displayHelpAndExit(OptionParser p) {
+    System.out.println(p.formatHelp("Heislufts Remapping Service version 1.0\n A deobfuscator and mappings generator\nusage: Remapper [options] <task> <input> <mappings>", 100));
+    System.exit(0);
+  }
+
+  public static void main(String[] args) throws IOException {
+    List<String> ignoredPaths = new ArrayList<>();
+    AtomicReference<Path> outPath = new AtomicReference<>();
+    AtomicReference<Path> jdkPath = new AtomicReference<>();
+    AtomicReference<Mappings> supplementaryMappings = new AtomicReference<>();
+    AtomicBoolean stripBridgeAccess = new AtomicBoolean(true);
+    OptionParser parser = new OptionParser(
+        new SubCommand("map", "Generates obfuscation mappings from the <input> jar and writes them to <mappings>."),
+        new SubCommand("remap", "Remaps the <input> jar with the specified <mappings> file and writes it to [output]. If the outputPath option is not specified, it will default to <input>-deobf.jar"),
+        new SubCommand("genReverseMappings", "Generates reverse obfuscation mappings from the <input> mappings and writes them to <mappings>."),
+        new SubCommand("genMediatorMappings", "Writes mappings mapping the output of <input> to the output of <mappings> to [output]."),
+        new SubCommand("genConversionMappings", "Writes mappings mapping the input of <input> to the output of <mappings> to [output]."),
+        new SubCommand("cleanMappings", "Writes a clean version of the mappings at <input> to <mapping>")
+    );
+    parser.addOptions(
+        arg("ignorePaths")
+            .validFor("map", "remap")
+            .description("A List of paths to ignore from the input jar. Multiple Paths are separated using ; (semicolon). These Paths are treated as wildcards. For example, -i /com;/org/unwanted/ would lead the program to exclude all paths starting with either '/com' or '/org/unwanted/' eg. '/com/i.class', '/computer.xml', '/org/unwanted/b.gif'. This option will be ignored for tasks only operating on mappings", "pathsToIgnore")
+            .callback(s -> ignoredPaths.addAll(Arrays.asList(s.split(";"))))
+            .build(),
+        arg("outputPath", Path.class)
+            .validFor("remap", "genConversionMappings", "genMediatorMappings")
+            .description("Overrides the path where the remapped jar will be written to. This option will be ignored for 'map', 'genReverseMappings' and 'cleanMappings'.", "outputPath")
+            .callback(p -> {
+              if(!Files.isWritable(p)) throw new IllegalArgumentException("output path is not writable");
+              outPath.set(p);
+            })
+            .build(),
+        arg("supplementary", Path.class)
+            .validFor("map")
+            .description("Valid only for 'map'. Provides supplementary mappings. For these, no new mappings will be generated, instead they will directly be merged into the output mappings file", "mappingsPath")
+            .callback(p -> {
+              if(!Files.isReadable(p)) throw new IllegalArgumentException("mappings path does not exist or is not readable");
+              try {
+                supplementaryMappings.set(MappingsHandlers.parseMappings(p));
+              } catch(IOException exception) {
+                throw new IllegalArgumentException("Error reading mappings at " + p, exception);
+              }
+            })
+            .build(),
+        arg("jdk", Path.class)
+            .validFor("map")
+            .description("Valid only for 'map'. Path to JDK, used for inferring exceptions", "jdkPath")
+            .callback(p -> {
+              if(!Files.isDirectory(p)) throw new IllegalArgumentException("jdk path does not point to a directory");
+              jdkPath.set(p);
+            })
+            .build(),
+        flag("noBridgeStrip").shorthand('b')
+            .validFor("remap")
+            .description("Valid only for 'remap'. Skips stripping of bridge and synthetic access modifiers for bridge methods.")
+            .whenSet(() -> stripBridgeAccess.set(false))
+            .build(),
+        flag("help")
+            .description("Displays this message.")
+            .whenSet(() -> displayHelpAndExit(parser))
+            .build()
+    );
+    OptionParseResult result = parser.parse(args);
+    if(result.subcommand == null)  {
+      displayHelpAndExit(parser);
       return;
     }
-    String action = args[0];
-    List<String> ignoredPaths = new ArrayList<>();
-    Path outPath = null;
-    Path jdkPath = null;
-    Mappings supplementaryMappings = null;
-    List<String> ignoredOpts = new ArrayList<>(args.length - 3);
-    if(args.length > 3) {
-      for(int i = 3; i < args.length; i++) {
-        String arg = args[i];
-        //As we have no flag options, all options require an argument
-        if(arg.startsWith("--") && arg.indexOf('=') < 0 || (arg.startsWith("-") && !arg.startsWith("--") && i == args.length-1)) {
-          ignoredOpts.add(arg);
-          continue;
-        }
-        if(arg.startsWith("--jdk=") || arg.equals("-j")) {
-          if(!action.equals("map")) ignoredOpts.add(arg.equals("-j") ? "-j " + args[++i] : arg);
-          else {
-            jdkPath = Paths.get(arg.equals("-j") ? args[++i] : arg.substring(arg.indexOf('=') + 1));
-            if(!Files.isDirectory(jdkPath)) {
-              System.err.println("'" + jdkPath + "' does not point to a regular file");
-              return;
-            }
-          }
-          continue;
-        }
-        if(arg.startsWith("--supplementary=") || arg.equals("-s")) {
-          if(!action.equals("map")) ignoredOpts.add(arg.equals("-s") ? "-s " + args[++i] : arg);
-          else {
-            Path sPath = Paths.get(arg.equals("-s") ? args[++i] : arg.substring(arg.indexOf('=') + 1));
-            if(!Files.isRegularFile(sPath)) {
-              System.err.println("'" + sPath + "' does not point to a regular file");
-              return;
-            }
-            try {
-              supplementaryMappings = MappingsHandlers.findFileHandler(sPath.getFileName().toString()).parseMappings(sPath);
-            } catch (IOException e) {
-              System.err.println("Could not parse supplementary mappings!");
-              e.printStackTrace();
-              return;
-            }
-          }
-          continue;
-        }
-        if((arg.startsWith("--outputPath=") || arg.equals("-o"))) {
-          if(!(action.equals("remap") || action.equals("genMediatorMappings") || action.equals("genConversionMappings")) || outPath != null || arg.contains("=") && arg.split("=", 2)[1].isEmpty())
-            ignoredOpts.add(arg.equals("-o") ? "-o " + args[++i] : arg);
-          else outPath = Paths.get(arg.equals("-o") ? args[++i] : arg.substring(arg.indexOf('=') + 1));
-          continue;
-        }
-        if(arg.startsWith("--ignorePaths") || arg.equals("-i")) {
-          if(!(action.equals("remap") || action.equals("map")) || !ignoredPaths.isEmpty() || arg.contains("=") && arg.split("=", 2)[1].isEmpty())
-            ignoredOpts.add(arg.equals("-i") ? "-i " + args[++i] : arg);
-          else ignoredPaths.addAll(Arrays.asList((arg.equals("-i") ? args[++i] : arg.substring(arg.indexOf('=') + 1)).split(";")));
-          continue;
-        }
-        ignoredOpts.add(arg.startsWith("-") ? arg + " " + args[++i] : arg);
-      }
+    String action = result.subcommand;
+    List<String> remaining = result.additional;
+    if(remaining.size() < 2) {
+      System.out.println("Insufficient arguments, expected 2. Run with --help for more information.");
+      System.exit(1);
     }
-    if(action.equals("remap")) {
-      if(args.length > 3 && args[3].equals(args[1])) {
-        System.out.println("The output path must not match the input path.");
-        return;
-      }
-      if(outPath == null) outPath = Paths.get(args[1].substring(0, args[1].lastIndexOf('.')) + "-deobf.jar");
-    }
-    if(!ignoredOpts.isEmpty()) System.out.println("ignored options: " + ignoredOpts);
+    if(remaining.size() > 2) System.out.println("Ignored arguments: " + remaining.subList(2, remaining.size()));
+
+    Path inputPath = Paths.get(remaining.get(0));
+    Path mappingsPath = Paths.get(remaining.get(1));
+
+    if(outPath.get() == null) outPath.set(Paths.get("remap".equals(action) ? remaining.get(0).substring(0, remaining.get(0).lastIndexOf('.')) + "-deobf.jar" : "out.frg"));
+
     try {
-      Path inputPath = Paths.get(args[1]);
-      Path mappingsPath = Paths.get(args[2]);
       MappingsHandler frgProvider = MappingsHandlers.findHandler("frg");
-      MappingsHandler firstProv = MappingsHandlers.findFileHandler(args[1]);
+      MappingsHandler firstProv = MappingsHandlers.findFileHandler(mappingsPath.toString());
       switch(action) {
         case "cleanMappings":
           frgProvider.writeMappings(firstProv.parseMappings(inputPath).clean(), mappingsPath);
           break;
         case "genMediatorMappings":
           Mappings a2b = firstProv.parseMappings(inputPath);
-          Mappings a2c = MappingsHandlers.findFileHandler(args[2]).parseMappings(mappingsPath);
-          frgProvider.writeMappings(a2b.generateMediatorMappings(a2c), outPath);
+          Mappings a2c = MappingsHandlers.findFileHandler(mappingsPath.toString()).parseMappings(mappingsPath);
+          frgProvider.writeMappings(a2b.generateMediatorMappings(a2c), outPath.get());
           break;
         case "genConversionMappings":
           a2b = firstProv.parseMappings(inputPath);
-          Mappings b2c = MappingsHandlers.findFileHandler(args[2]).parseMappings(mappingsPath);
-          frgProvider.writeMappings(a2b.generateConversionMethods(b2c), outPath);
+          Mappings b2c = MappingsHandlers.findFileHandler(mappingsPath.toString()).parseMappings(mappingsPath);
+          frgProvider.writeMappings(a2b.generateConversionMethods(b2c), outPath.get());
           break;
         case "remap":
-          new Remapper().remapJar(inputPath, mappingsPath, outPath, ignoredPaths);
+          if(outPath.get().equals(inputPath)) {
+            System.out.println("The output path must not match the input path.");
+            return;
+          }
+          new Remapper().remapJar(inputPath, mappingsPath, outPath.get(), ignoredPaths, stripBridgeAccess.get());
           break;
         case "genReverseMappings":
           frgProvider.writeMappings(firstProv.parseMappings(inputPath).generateReverseMappings(), mappingsPath);
           break;
         default:
-          frgProvider.writeMappings(new MappingsGenerator(supplementaryMappings, jdkPath == null ? new JDKClassProvider() : new JDKClassProvider(jdkPath)).generateMappings(inputPath, ignoredPaths), mappingsPath);
+          frgProvider.writeMappings(new MappingsGenerator(supplementaryMappings.get(), jdkPath.get() == null ? new JDKClassProvider() : new JDKClassProvider(jdkPath.get())).generateMappings(inputPath, ignoredPaths), mappingsPath);
           break;
       }
     } catch(IOException e) {
@@ -224,12 +202,12 @@ public class Remapper implements Util {
     return (access & Opcodes.ACC_SYNTHETIC) == Opcodes.ACC_SYNTHETIC;
   }
 
-  private void remapJar(Path inputPath, Path mappingsPath, Path outputPath, List<String> ignorePaths) throws IOException {
+  private void remapJar(Path inputPath, Path mappingsPath, Path outputPath, List<String> ignorePaths, boolean stripBridgeAccess) throws IOException {
     classNodes.putAll(parseClasses(inputPath, ignorePaths, 0));
     Mappings mappings = MappingsHandlers.findFileHandler(mappingsPath.toString()).parseMappings(mappingsPath);
     classNodes.values().forEach(node -> {
           node.methods.forEach(mn -> {
-            if(isSynthetic(mn.access) && !Type.getInternalName(Enum.class).equals(node.superName) && (mn.access & Opcodes.ACC_BRIDGE) == Opcodes.ACC_BRIDGE) {
+            if(stripBridgeAccess && isSynthetic(mn.access) && !Type.getInternalName(Enum.class).equals(node.superName) && (mn.access & Opcodes.ACC_BRIDGE) == Opcodes.ACC_BRIDGE) {
               System.out.println("class " + mappings.getClassName(node.name) + node.interfaces + " contains bridge method " + mn.name + ". It may have been an anonymous class");
               System.out.println("The remapper will now strip the bridge AND synthetic flag. This CAN introduce compile errors later on and it makes regenerification much harder");
               System.out.println("Look into generating the specialized method?");
@@ -245,7 +223,7 @@ public class Remapper implements Util {
           });
         }
     );
-    classNodes.values().forEach(thrc(n -> {
+    classNodes.values().forEach(n -> {
       n.fields.forEach(f -> {
         f.name = remapFieldName(n, f.name, f.desc, mappings);
         f.desc = mappings.remapDescriptor(f.desc);
@@ -315,14 +293,14 @@ public class Remapper implements Util {
           }
         });
       });
-    }));
+    });
     Files.write(outputPath, new byte[]{80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
     try(FileSystem fs = createFS(outputPath)) {
-      classNodes.values().forEach(thrc(n -> {
+      for(ClassNode n : classNodes.values()) {
         if(n.nestMembers != null) n.nestMembers = n.nestMembers.stream().map(mappings::getClassName).collect(Collectors.toList());
         n.nestHostClass = mappings.getClassName(n.nestHostClass);
         n.name = mappings.getClassName(n.name);
-        n.superName =  mappings.getClassName(n.superName);
+        n.superName = mappings.getClassName(n.superName);
         n.interfaces = n.interfaces.stream().map(mappings::getClassName).collect(Collectors.toList());
         n.innerClasses.forEach(c -> {
           c.name = mappings.getClassName(c.name);
@@ -344,7 +322,7 @@ public class Remapper implements Util {
         n.accept(w);
         if(n.name.contains("/")) Files.createDirectories(fs.getPath(n.name.substring(0, n.name.lastIndexOf('/'))));
         Files.write(fs.getPath(n.name + ".class"), w.toByteArray());
-      }));
+      }
     }
   }
 
