@@ -6,9 +6,9 @@ plugins {
 }
 
 group 'de.heisluft.deobf.tooling'
-version '0.1.11'
+version '0.2.0'
 
-java.toolchain.languageVersion.set(JavaLanguageVersion.of(8))
+java.toolchain.languageVersion.set(JavaLanguageVersion.of(21))
 
 tasks.register('sourcesJar', Jar.class) {
     dependsOn(classes)

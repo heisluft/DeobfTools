@@ -53,57 +53,51 @@ public class Sigmund implements Util{
       });
     });
 
-    classes.values().forEach(classNode -> {
+    classes.values().forEach(classNode -> classNode.methods.forEach(methodNode -> methodNode.instructions.forEach(mn -> {
+      if(mn.getOpcode() != GETFIELD && mn.getOpcode() != GETSTATIC) return;
+      FieldInsnNode fin = ((FieldInsnNode) mn);
+      if(!paramGuesses.containsKey(fin.owner) || !paramGuesses.get(fin.owner).containsKey(fin.name)) return;
+      System.out.println(classNode.name + "#" + methodNode.name + methodNode.desc + " accesses maybe generic field " + fin.owner + "#" + fin.name + ", lets trace");
+      AbstractInsnNode next = mn.getNext();
+      while(!(next instanceof JumpInsnNode)) {
+        if(next == null) return; // Hit end of code, unfortunate
+        if(next instanceof MethodInsnNode meth && isAssignableFrom(meth.owner, fin.desc.substring(1, fin.desc.length() - 1))) {
+          ClassNode callee = classes.containsKey(meth.owner) ? classes.get(meth.owner) : classProvider.getClassNode(meth.owner);
+          if(callee == null) return;
+          Optional<MethodNode> called = callee.methods.stream().filter(m -> m.name.equals(meth.name) && m.desc.equals(meth.desc)).findFirst();
+          if(called.isEmpty()) return;
+          MethodNode calledNode = called.get();
+          if(calledNode.signature == null) return;
+          System.out.println();
+          break;
+        }
+        next = next.getNext();
+      }
+      /*if(!(mn instanceof MethodInsnNode)) return;
+      MethodInsnNode min = ((MethodInsnNode) mn);
+      if(!min.owner.equals("java/util/Iterator") || !min.name.equals("next")) return;
+      AbstractInsnNode next = min.getNext();
+      if(next.getOpcode() != CHECKCAST) return;
+      System.out.println("Found Iterator of type " + ((TypeInsnNode)next).desc + " in " + classNode.name + "#" + methodNode.name + methodNode.desc);
+      AbstractInsnNode prev = min.getPrevious();
+      if(prev.getOpcode() == ALOAD) {
+        System.out.println("");
+        System.out.println("Loaded from " + ((VarInsnNode)prev).var);
+      }
+      else if(prev.getOpcode() == INVOKEINTERFACE) {
+        MethodInsnNode pMin = ((MethodInsnNode) prev);
+        if(!pMin.desc.startsWith("()")) return; // only accept no args for now
+        System.out.println("In Situ from " + pMin.owner + "#" + pMin.name + pMin.desc);
+        prev = prev.getPrevious();
+        if(prev.getOpcode() != GETFIELD) {
+          System.out.println("Test1");
+          return;
+        }
+        FieldInsnNode fin = (FieldInsnNode) prev;
+        if(classes.containsKey(fin.owner)) System.out.println("Found type specialization for " + fin.owner + "#" + fin.name + " of type '" + fin.desc + "': " + ((TypeInsnNode)next).desc);
+      }*/
 
-      classNode.methods.forEach(methodNode -> {
-        methodNode.instructions.forEach(mn -> {
-          if(mn.getOpcode() != GETFIELD && mn.getOpcode() != GETSTATIC) return;
-          FieldInsnNode fin = ((FieldInsnNode) mn);
-          if(!paramGuesses.containsKey(fin.owner) || !paramGuesses.get(fin.owner).containsKey(fin.name)) return;
-          System.out.println(classNode.name + "#" + methodNode.name + methodNode.desc + " accesses maybe generic field " + fin.owner + "#" + fin.name + ", lets trace");
-          AbstractInsnNode next = mn.getNext();
-          while(!(next instanceof JumpInsnNode)) {
-            if(next == null) return; // Hit end of code, unfortunate
-            if(next instanceof MethodInsnNode && isAssignableFrom(((MethodInsnNode) next).owner, fin.desc.substring(1, fin.desc.length() - 1))) {
-              MethodInsnNode meth = (MethodInsnNode) next;
-              ClassNode callee = classes.containsKey(meth.owner) ? classes.get(meth.owner) : classProvider.getClassNode(meth.owner);
-              if(callee == null) return;
-              Optional<MethodNode> called = callee.methods.stream().filter(m -> m.name.equals(meth.name) && m.desc.equals(meth.desc)).findFirst();
-              if(!called.isPresent()) return;
-              MethodNode calledNode = called.get();
-              if(calledNode.signature == null) return;
-              System.out.println();
-              break;
-            }
-            next = next.getNext();
-          }
-          /*if(!(mn instanceof MethodInsnNode)) return;
-          MethodInsnNode min = ((MethodInsnNode) mn);
-          if(!min.owner.equals("java/util/Iterator") || !min.name.equals("next")) return;
-          AbstractInsnNode next = min.getNext();
-          if(next.getOpcode() != CHECKCAST) return;
-          System.out.println("Found Iterator of type " + ((TypeInsnNode)next).desc + " in " + classNode.name + "#" + methodNode.name + methodNode.desc);
-          AbstractInsnNode prev = min.getPrevious();
-          if(prev.getOpcode() == ALOAD) {
-            System.out.println("");
-            System.out.println("Loaded from " + ((VarInsnNode)prev).var);
-          }
-          else if(prev.getOpcode() == INVOKEINTERFACE) {
-            MethodInsnNode pMin = ((MethodInsnNode) prev);
-            if(!pMin.desc.startsWith("()")) return; // only accept no args for now
-            System.out.println("In Situ from " + pMin.owner + "#" + pMin.name + pMin.desc);
-            prev = prev.getPrevious();
-            if(prev.getOpcode() != GETFIELD) {
-              System.out.println("Test1");
-              return;
-            }
-            FieldInsnNode fin = (FieldInsnNode) prev;
-            if(classes.containsKey(fin.owner)) System.out.println("Found type specialization for " + fin.owner + "#" + fin.name + " of type '" + fin.desc + "': " + ((TypeInsnNode)next).desc);
-          }*/
-
-        });
-      });
-    });
+    })));
   }
 
   public static void main(String[] args) throws Exception {

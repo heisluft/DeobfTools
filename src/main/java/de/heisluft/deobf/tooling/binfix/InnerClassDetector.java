@@ -132,14 +132,11 @@ public class InnerClassDetector implements Util, MappingsProvider {
    */
   private static boolean incompatibleReturnType(String argType, String returnType) {
     if(argType.equals(returnType)) return false;
-    switch(returnType) {
-      case "Z":
-      case "B":
-      case "C":
-      case "S": return !"I".equals(argType);
-      case "Ljava/lang/String;": return !"Ljava/lang/Object;".equals(argType);
-    }
-    return true;
+    return switch(returnType) {
+      case "Z", "B", "C", "S" -> !"I".equals(argType);
+      case "Ljava/lang/String;" -> !"Ljava/lang/Object;".equals(argType);
+      default -> true;
+    };
   }
 
   /**
@@ -228,10 +225,8 @@ public class InnerClassDetector implements Util, MappingsProvider {
       }
       // A method accessor should only ever relay method calls
       // invokevirtual and invokestatic are the only permitted calls
-      if(!(ain instanceof MethodInsnNode) || opCode == INVOKEVIRTUAL || opCode == INVOKEINTERFACE) {
-        return null;
-      }
-      MethodInsnNode min = (MethodInsnNode)ain;
+      if(!(ain instanceof MethodInsnNode min) || opCode == INVOKEVIRTUAL || opCode == INVOKEINTERFACE) return null;
+
       // Accessors only relay within their own class
       if(!cName.equals(min.owner)) return null;
       // Only private methods have accessors generated
@@ -272,19 +267,18 @@ public class InnerClassDetector implements Util, MappingsProvider {
           || ain instanceof JumpInsnNode
           || ain instanceof LookupSwitchInsnNode) return false;
       // We forbid ref creation, only exception is the += operator generating a StringBuilder
-      if(ain instanceof TypeInsnNode) {
+      if(ain instanceof TypeInsnNode tin) {
         if(ain.getOpcode() == ANEWARRAY) return false;
-        if(ain.getOpcode() == NEW && !"java/lang/StringBuilder".equals(((TypeInsnNode) ain).desc)) return false;
+        if(ain.getOpcode() == NEW && !"java/lang/StringBuilder".equals(tin.desc)) return false;
       }
       // Accessors of static fields should not operate on instance fields and vice-versa
-      if(ain instanceof FieldInsnNode) {
+      else if(ain instanceof FieldInsnNode fin) {
         if(staticLock != null) {
           if(staticLock && ain.getOpcode() == GETFIELD || staticLock && ain.getOpcode() == PUTFIELD)
             return false;
           if(!staticLock && ain.getOpcode() == GETSTATIC || !staticLock && ain.getOpcode() == PUTSTATIC)
             return false;
         }
-        FieldInsnNode fin = (FieldInsnNode) ain;
         // Access to fields other than the ones within the class itself are disallowed
         if(!cName.equals(fin.owner)) return false;
         if(fieldLock != null && !fieldLock.equals(fin.name)) return false;
@@ -296,8 +290,7 @@ public class InnerClassDetector implements Util, MappingsProvider {
       }
       // only the += string accessor is actually invoking methods
       // and it is only calling string builder once.
-      if(ain instanceof MethodInsnNode) {
-        MethodInsnNode min = (MethodInsnNode) ain;
+      else if(ain instanceof MethodInsnNode min) {
         if(ain.getOpcode() == INVOKEINTERFACE || ain.getOpcode() == INVOKESTATIC) return false;
         if(!min.owner.equals("java/lang/StringBuilder")) return false;
         switch(min.name) {

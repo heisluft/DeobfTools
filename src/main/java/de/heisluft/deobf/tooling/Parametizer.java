@@ -53,26 +53,17 @@ public class Parametizer implements Util {
   }
 
   private String identifierName(String s) {
-    switch(s) {
-      case "B":
-        return "byte";
-      case "C":
-        return "char";
-      case "D":
-        return "double";
-      case "F":
-        return "float";
-      case "I":
-        return "int";
-      case "J":
-        return "long";
-      case "S":
-        return "short";
-      case "Z":
-        return "boolean";
-      default:
-        return s;
-    }
+    return switch(s) {
+      case "B" -> "byte";
+      case "C" -> "char";
+      case "D" -> "double";
+      case "F" -> "float";
+      case "I" -> "int";
+      case "J" -> "long";
+      case "S" -> "short";
+      case "Z" -> "boolean";
+      default -> s;
+    };
   }
 
   private List<String> nameParams(String descriptor) {

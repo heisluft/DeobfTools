@@ -44,9 +44,10 @@ public class ExceptionMapper implements Util {
 
   private boolean isRuntimeOrErrorClass(ClassNode cn) {
     String sup = cn.superName;
-    if(sup.equals("java/lang/Error")) return true;
-    if(sup.equals("java/lang/RuntimeException")) return true;
-    if(sup.equals("java/lang/Object")) return false;
+    switch(sup) {
+      case "java/lang/Error", "java/lang/RuntimeException" -> {return true;}
+      case "java/lang/Object" -> {return false;}
+    }
     ClassNode supC = provider.getClassNode(sup);
     if(supC != null) return isRuntimeOrErrorClass(supC);
     return classNodes.containsKey(sup) && isRuntimeOrErrorClass(classNodes.get(sup));
@@ -54,10 +55,10 @@ public class ExceptionMapper implements Util {
 
   private boolean isExceptionClass(ClassNode cn) {
     String sup = cn.superName;
-    if(sup.equals("java/lang/Throwable")) return true;
-    if(sup.equals("java/lang/Exception")) return true;
-    if(sup.equals("java/lang/Object")) return false;
-    if(sup.equals("java/lang/RuntimeException")) return false;
+    switch(sup) {
+      case "java/lang/Throwable", "java/lang/Exception" -> {return true;}
+      case "java/lang/Object", "java/lang/RuntimeException" -> {return false;}
+    }
     ClassNode supC = provider.getClassNode(sup);
     if(supC != null) return isExceptionClass(supC);
     return classNodes.containsKey(sup) && isExceptionClass(classNodes.get(sup));
@@ -91,20 +92,12 @@ public class ExceptionMapper implements Util {
     private static Set<String> currentDirty = new HashSet<>();
     private static boolean firstPass = true;
 
-    /**
-     * @param className
-     * @param provider
-     */
     public ExInferringMV(String className, JDKClassProvider provider) {
       super(ASM7);
       this.className = className;
       this.provider = provider;
     }
 
-    /**
-     *
-     * @param node
-     */
     public void accept(MethodNode node) {
       if(addedExceptions.containsKey(className + "." + node.name + node.desc)) return;
       if(!firstPass && (!calledMethods.containsKey(node) || calledMethods.get(node).stream().noneMatch(lastDirty::contains))) return;
@@ -385,20 +378,14 @@ public class ExceptionMapper implements Util {
     }
 
     public void visitLdcInsn(Object value) {
-      if(value instanceof Integer) {
-        stack.push("I");
-      } else if(value instanceof Float) {
-        stack.push("F");
-      } else if(value instanceof Long) {
-        stack.push("J");
-      } else if(value instanceof Double) {
-        stack.push("D");
-      } else if(value instanceof String) {
-        stack.push("Ljava/lang/String;");
-      } else if(value instanceof Type) {
-        stack.push(value.toString());
-      } else {
-        throw new RuntimeException("This should not happen");
+      switch(value) {
+        case Integer ignored -> stack.push("I");
+        case Float ignored -> stack.push("F");
+        case Long ignored -> stack.push("J");
+        case Double ignored -> stack.push("D");
+        case String ignored -> stack.push("Ljava/lang/String;");
+        case Type ignored -> stack.push(value.toString());
+        default -> throw new RuntimeException("This should not happen");
       }
 
       super.visitLdcInsn(value);
@@ -440,34 +427,15 @@ public class ExceptionMapper implements Util {
       super.visitVarInsn(opcode, var);
     }
 
-    /**
-     *
-     * @param type
-     * @return
-     */
     static String desc(String type) {
       if(type == null) return "null";
       if(type.startsWith("[") || type.endsWith(";")) return type;
-      switch(type) {
-        case "Z":
-        case "C":
-        case "J":
-        case "I":
-        case "S":
-        case "B":
-        case "D":
-        case "F":
-          return type;
-      }
-      return "L" + type + ";";
+      return switch(type) {
+        case "Z", "C", "J", "I", "S", "B", "D", "F" -> type;
+        default -> "L" + type + ";";
+      };
     }
 
-    /**
-     *
-     * @param exDesc
-     * @param caughtExceptions
-     * @return
-     */
     private boolean isSignificant(String exDesc, List<String> caughtExceptions) {
       if(exDesc.equals("null")) return false;
       String exType = exDesc.substring(1, exDesc.length() - 1);

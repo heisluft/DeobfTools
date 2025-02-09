@@ -246,50 +246,40 @@ public class Remapper implements Util {
         if(mn.signature != null) mn.signature = mappings.remapDescriptor(mn.signature);
         mn.tryCatchBlocks.forEach(tcbn->tcbn.type = mappings.getClassName(tcbn.type));
         mn.instructions.forEach(ins -> {
-          if(ins instanceof FieldInsnNode) {
-            FieldInsnNode fieldNode = (FieldInsnNode) ins;
-            if(classNodes.containsKey(fieldNode.owner)) fieldNode.name = remapFieldName(classNodes.get(fieldNode.owner), fieldNode.name, fieldNode.desc, mappings);
-            //If we cant go for inheritance (e.g. the target class is outside the remapped classpath), try to directly match the field name
-            else if(mappings.hasFieldMapping(fieldNode.owner, fieldNode.name, fieldNode.desc)) fieldNode.name = mappings.getFieldName(fieldNode.owner, fieldNode.name, fieldNode.desc);
-            fieldNode.desc = mappings.remapDescriptor(fieldNode.desc);
-            if(fieldNode.owner.startsWith("[")) fieldNode.owner = mappings.remapDescriptor(fieldNode.owner);
-            else fieldNode.owner = mappings.getClassName(fieldNode.owner);
-          }
-          if(ins instanceof MethodInsnNode) {
-            MethodInsnNode methodNode = (MethodInsnNode) ins;
-            methodNode.name = classNodes.containsKey(methodNode.owner) ? remapMethodName(classNodes.get(methodNode.owner), methodNode.name, methodNode.desc, mappings) : methodNode.name;
-            if(methodNode.owner.startsWith("[")) methodNode.owner = mappings.remapDescriptor(methodNode.owner);
-              //If we cant go for inheritance (e.g. the target class is outside the remapped classpath), try to directly match the method name
-            else if(mappings.hasMethodMapping(methodNode.owner, methodNode.name, methodNode.desc)) methodNode.name = mappings.getMethodName(methodNode.owner, methodNode.name, methodNode.desc);
-            else methodNode.owner = mappings.getClassName(methodNode.owner);
-            methodNode.desc = mappings.remapDescriptor(methodNode.desc);
-          }
-          if(ins instanceof MultiANewArrayInsnNode) {
-            MultiANewArrayInsnNode manaNode = (MultiANewArrayInsnNode) ins;
-            manaNode.desc = mappings.remapDescriptor(manaNode.desc);
-          }
-          if(ins instanceof TypeInsnNode) {
-            TypeInsnNode typeNode = (TypeInsnNode) ins;
-            typeNode.desc = typeNode.desc.startsWith("[") ? mappings.remapDescriptor(typeNode.desc) : mappings.getClassName(typeNode.desc);
-          }
-          if(ins instanceof LdcInsnNode) {
-            LdcInsnNode ldcInsnNode = (LdcInsnNode) ins;
-            if(ldcInsnNode.cst instanceof Type) ldcInsnNode.cst = Type
-                .getType(mappings.remapDescriptor(((Type) ldcInsnNode.cst).getDescriptor()));
-          }
-          if(ins instanceof InvokeDynamicInsnNode) {
-            InvokeDynamicInsnNode iDIN = (InvokeDynamicInsnNode) ins;
-            String delCls = iDIN.desc.substring(iDIN.desc.indexOf(')') + 2, iDIN.desc.length() - 1);
-            if(classNodes.containsKey(delCls)) iDIN.name = remapMethodName(classNodes.get(delCls), iDIN.name, iDIN.bsmArgs[0].toString(), mappings); //Works on default MethodHandleLookup
-            iDIN.desc = mappings.remapDescriptor(iDIN.desc);
-            for(int i = 0; i < iDIN.bsmArgs.length; i++) {
-              Object o = iDIN.bsmArgs[i];
-              if(o instanceof Type) iDIN.bsmArgs[i] = Type.getType(mappings.remapDescriptor(((Type) o).getDescriptor()));
-              if(o instanceof Handle) {
-                Handle h = (Handle) o;
-                iDIN.bsmArgs[i] = new Handle(h.getTag(), mappings.getClassName(h.getOwner()), remapMethodName(classNodes.get(h.getOwner()), h.getName(), h.getDesc(), mappings), mappings.remapDescriptor(h.getDesc()), h.isInterface());
+          switch(ins) {
+            case FieldInsnNode fieldNode -> {
+              if(classNodes.containsKey(fieldNode.owner)) fieldNode.name = remapFieldName(classNodes.get(fieldNode.owner), fieldNode.name, fieldNode.desc, mappings);
+                //If we cant go for inheritance (e.g. the target class is outside the remapped classpath), try to directly match the field name
+              else if(mappings.hasFieldMapping(fieldNode.owner, fieldNode.name, fieldNode.desc)) fieldNode.name = mappings.getFieldName(fieldNode.owner, fieldNode.name, fieldNode.desc);
+              fieldNode.desc = mappings.remapDescriptor(fieldNode.desc);
+              if(fieldNode.owner.startsWith("[")) fieldNode.owner = mappings.remapDescriptor(fieldNode.owner);
+              else fieldNode.owner = mappings.getClassName(fieldNode.owner);
+            }
+            case MethodInsnNode methodNode -> {
+              methodNode.name = classNodes.containsKey(methodNode.owner) ? remapMethodName(classNodes.get(methodNode.owner), methodNode.name, methodNode.desc, mappings) : methodNode.name;
+              if(methodNode.owner.startsWith("[")) methodNode.owner = mappings.remapDescriptor(methodNode.owner);
+                //If we cant go for inheritance (e.g. the target class is outside the remapped classpath), try to directly match the method name
+              else if(mappings.hasMethodMapping(methodNode.owner, methodNode.name, methodNode.desc)) methodNode.name = mappings.getMethodName(methodNode.owner, methodNode.name, methodNode.desc);
+              else methodNode.owner = mappings.getClassName(methodNode.owner);
+              methodNode.desc = mappings.remapDescriptor(methodNode.desc);
+            }
+            case MultiANewArrayInsnNode manaNode ->
+                manaNode.desc = mappings.remapDescriptor(manaNode.desc);
+            case TypeInsnNode typeNode ->
+                typeNode.desc = typeNode.desc.startsWith("[") ? mappings.remapDescriptor(typeNode.desc) : mappings.getClassName(typeNode.desc);
+            case LdcInsnNode ldcInsnNode when ldcInsnNode.cst instanceof Type t ->
+              ldcInsnNode.cst = Type.getType(mappings.remapDescriptor(t.getDescriptor()));
+            case InvokeDynamicInsnNode iDIN -> {
+              String delCls = iDIN.desc.substring(iDIN.desc.indexOf(')') + 2, iDIN.desc.length() - 1);
+              if(classNodes.containsKey(delCls)) iDIN.name = remapMethodName(classNodes.get(delCls), iDIN.name, iDIN.bsmArgs[0].toString(), mappings); //Works on default MethodHandleLookup
+              iDIN.desc = mappings.remapDescriptor(iDIN.desc);
+              for(int i = 0; i < iDIN.bsmArgs.length; i++) switch(iDIN.bsmArgs[i]) {
+                case Type t -> iDIN.bsmArgs[i] = Type.getType(mappings.remapDescriptor(t.getDescriptor()));
+                case Handle h -> iDIN.bsmArgs[i] = new Handle(h.getTag(), mappings.getClassName(h.getOwner()), remapMethodName(classNodes.get(h.getOwner()), h.getName(), h.getDesc(), mappings), mappings.remapDescriptor(h.getDesc()), h.isInterface());
+                default -> {}
               }
             }
+            default -> {}
           }
         });
       });

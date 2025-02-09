@@ -50,8 +50,7 @@ public class BridgeTool implements Util {
         int argOffset = 1;
         for(int i = 0; i < argTypes.length; i++) {
           ain = realInsns.get(++insnOffset);
-          if(!(ain instanceof VarInsnNode) || ain.getOpcode() >= ISTORE) return;
-          VarInsnNode v = (VarInsnNode) ain;
+          if(!(ain instanceof VarInsnNode v) || ain.getOpcode() >= ISTORE) return;
           if(v.var != i + argOffset) return;
           if(v.getOpcode() != ALOAD) {
             refinedTypes[i] = argTypes[i];
@@ -70,8 +69,7 @@ public class BridgeTool implements Util {
           specializedTypes++;
         }
         ain = realInsns.get(++insnOffset);
-        if(!(ain instanceof MethodInsnNode)) return;
-        MethodInsnNode min = (MethodInsnNode) ain;
+        if(!(ain instanceof MethodInsnNode min)) return;
         if(!min.owner.equals(cn.name) || !Arrays.equals(refinedTypes, Type.getArgumentTypes(min.desc))) return;
         Type returnType = Type.getReturnType(min.desc);
         boolean returnSpecialized = !Type.getReturnType(mn.desc).equals(returnType);
@@ -86,8 +84,7 @@ public class BridgeTool implements Util {
         MethodNode decl = inheritedFrom.methods.stream().filter(m -> mn.desc.equals(m.desc) && mn.name.equals(m.name)).findFirst().get();
         if(decl.signature == null) return;
         SignatureReader mSigReader = new SignatureReader(decl.signature);
-        mSigReader.accept(new SignatureVisitor(ASM9) {
-        });
+        mSigReader.accept(new SignatureVisitor(ASM9) {});
         List<String> typeVars = new ArrayList<>();
         SignatureReader classSigReader = new SignatureReader(inheritedFrom.signature);
         classSigReader.accept(new SignatureVisitor(ASM9) {

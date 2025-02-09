@@ -78,13 +78,14 @@ public class LVTool implements Util {
       }
       else if(inited.contains(varIndex)) return;
       int type = Type.VOID;
-      switch(opcode) {
-        case ALOAD: type = Type.OBJECT; break;
-        case DLOAD: type = Type.DOUBLE; break;
-        case FLOAD: type = Type.FLOAT; break;
-        case ILOAD: type = Type.INT; break;
-        case LLOAD: type = Type.LONG; break;
-      }
+      type = switch(opcode) {
+        case ALOAD -> Type.OBJECT;
+        case DLOAD -> Type.DOUBLE;
+        case FLOAD -> Type.FLOAT;
+        case ILOAD -> Type.INT;
+        case LLOAD -> Type.LONG;
+        default -> type;
+      };
       if(usedLocals.containsKey(varIndex) && usedLocals.get(varIndex) != type)
         throw new RuntimeException("Wellp");
       usedLocals.put(varIndex, type);

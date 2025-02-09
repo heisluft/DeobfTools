@@ -49,13 +49,15 @@ public class CFGAccessTransformer implements Util, AccessTransformer {
    * @return the modified access
    */
   private static int getModifiedAccess(int access, String command) {
-    if("public".equals(command)) return (access & 0xfff8) | Opcodes.ACC_PUBLIC;
-    if("protected".equals(command)) return (access & 0xfff8) | Opcodes.ACC_PROTECTED;
-    if("package".equals(command)) return (access & 0xfff8);
-    if("public-f".equals(command)) return (access & 0xffe8) | Opcodes.ACC_PUBLIC;
-    if("protected-f".equals(command)) return (access & 0xffe8) | Opcodes.ACC_PROTECTED;
-    if("package-f".equals(command)) return (access & 0xffe8);
-    return access;
+    return switch(command) {
+      case "public" -> (access & 0xfff8) | Opcodes.ACC_PUBLIC;
+      case "protected" -> (access & 0xfff8) | Opcodes.ACC_PROTECTED;
+      case "package" -> (access & 0xfff8);
+      case "public-f" -> (access & 0xffe8) | Opcodes.ACC_PUBLIC;
+      case "protected-f" -> (access & 0xffe8) | Opcodes.ACC_PROTECTED;
+      case "package-f" -> (access & 0xffe8);
+      default -> access;
+    };
   }
 
   /**

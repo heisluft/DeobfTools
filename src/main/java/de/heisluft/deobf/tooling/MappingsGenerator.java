@@ -139,7 +139,7 @@ public class MappingsGenerator implements Util {
    * @return true if none of the sets contain t, false otherwise
    */
   @SafeVarargs
-  private final <T> boolean noneContains(T t, Set<T>... sets) {
+  private <T> boolean noneContains(T t, Set<T>... sets) {
     for(Set<T> set : sets) if(set.contains(t)) return false;
     return true;
   }
