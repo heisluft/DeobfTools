@@ -80,7 +80,7 @@ public class EnumSwitchClassDetector implements Util, MappingsProvider {
         cn.methods.forEach(mn ->
             BiStream.streamMap(candidates).filter(
                 (cName, fName) -> !cn.name.equals(cName) && containsFieldGet(mn.instructions, cName, fName)
-            ).forEach((cName, fName) -> getOrPut(uses, cName, new HashSet<>()).add(cn.name))
+            ).forEach((cName, fName) -> uses.computeIfAbsent(cName, k -> new HashSet<>()).add(cn.name))
         )
     );
     uses.forEach((syn, used) -> {

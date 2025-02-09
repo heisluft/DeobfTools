@@ -88,7 +88,9 @@ public class Parametizer implements Util {
         result.add(identifierName(String.valueOf(c)) + (result.size() + 1));
       } else if(c == 'L' && !inWord) inWord = true;
       else if(c == ';') {
-        String clsName = toString(currentName);
+        StringBuilder builder = new StringBuilder();
+        currentName.forEach(builder::append);
+        String clsName = builder.toString();
         result.add(decapitalizeString(clsName.substring(clsName.lastIndexOf('/') + 1)) +
             (result.size() + 1));
         currentName.clear();

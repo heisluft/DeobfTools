@@ -213,8 +213,8 @@ public class MappingsGenerator implements Util {
       else if(modifiedName.contains("/") && RESERVED_WORDS.contains(modifiedName.substring(modifiedName.lastIndexOf('/') + 1))) {
         // Again, we need to avoid naming blah/if to blah/_if if there is already a so named class
         while(classNodes.containsKey(modifiedName) || builder.hasClassNameTarget(modifiedName)) {
-          String[] split = splitAt(modifiedName, modifiedName.lastIndexOf("/"));
-          modifiedName = split[0] + "/_" + split[1];
+          int lastSlash = modifiedName.lastIndexOf('/');
+          modifiedName = modifiedName.substring(0, lastSlash) + "/_" + modifiedName.substring(lastSlash + 1);
         }
       }
       // Classes and Packages must not share names, so just prepend underscores until a unique class name is guaranteed
@@ -223,8 +223,8 @@ public class MappingsGenerator implements Util {
           while(packages.contains(modifiedName) || classNodes.containsKey(modifiedName))
             modifiedName = "_" + modifiedName;
         else while(packages.contains(modifiedName) || classNodes.containsKey(modifiedName)) {
-          String[] split = splitAt(modifiedName, modifiedName.lastIndexOf("/"));
-          modifiedName = split[0] + "/_" + split[1];
+          int lastSlash = modifiedName.lastIndexOf('/');
+          modifiedName = modifiedName.substring(0, lastSlash) + "/_" + modifiedName.substring(lastSlash + 1);
         }
       }
       if(ignored.stream().noneMatch(modifiedName::startsWith))

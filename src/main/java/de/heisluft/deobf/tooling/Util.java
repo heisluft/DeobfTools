@@ -111,29 +111,6 @@ public interface Util {
   }
 
   /**
-   * Retrieves a value from a map with a fallback. If a mapping for the key does not exist, it will
-   * be created within the map and fallback is returned.
-   *
-   * @param map
-   *     the map to look in
-   * @param key
-   *     the key to retrieve / store a value for
-   * @param fallback
-   *     the value to map to key if key is not already mapped
-   * @param <K>
-   *     the keys type
-   * @param <V>
-   *     the values type
-   *
-   * @return the value mapped to the specified key
-   */
-  default <K, V> V getOrPut(Map<K, V> map, K key, V fallback) {
-    if(map.containsKey(key)) return map.get(key);
-    map.put(key, fallback);
-    return fallback;
-  }
-
-  /**
    * Parses the given file to a ClassNode
    *
    * @param path
@@ -151,37 +128,5 @@ public interface Util {
     ClassNode result = new ClassNode(Opcodes.ASM9);
     cr.accept(result, parseFlags);
     return result;
-  }
-
-  /**
-   * Joins the given Collection of characters to a string
-   *
-   * @param chars
-   *     the chars to be joined
-   *
-   * @return the joined string
-   */
-  default String toString(Collection<Character> chars) {
-    StringBuilder builder = new StringBuilder();
-    chars.forEach(builder::append);
-    return builder.toString();
-  }
-
-  /**
-   * Splits a String at the given index.
-   *
-   * @param toSplit
-   *     the String to be split
-   * @param index
-   *     the index on which to split on
-   *
-   * @return the pair of split halves
-   */
-  default String[] splitAt(String toSplit, int index) {
-    return new String[]{toSplit.substring(0, index), toSplit.substring(index + 1)};
-  }
-
-  default <T> Predicate<T> not(Predicate<T> inverted) {
-    return inverted.negate();
   }
 }

@@ -105,8 +105,8 @@ public class CFGAccessTransformer implements Util, AccessTransformer {
           String className = split[0];
           String memberName = split[1];
           if(memberName.contains("("))
-            getOrPut(methodCommands, className, new HashMap<>()).put(memberName, command);
-          else getOrPut(fieldCommands, className, new HashMap<>()).put(memberName, command);
+            methodCommands.computeIfAbsent(className, k -> new HashMap<>()).put(memberName, command);
+          else fieldCommands.computeIfAbsent(className, k -> new HashMap<>()).put(memberName, command);
         });
   }
 

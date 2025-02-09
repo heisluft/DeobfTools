@@ -70,7 +70,7 @@ public class Remapper implements Util {
             .validFor("remap", "genConversionMappings", "genMediatorMappings")
             .description("Overrides the path where the remapped jar will be written to. This option will be ignored for 'map', 'genReverseMappings' and 'cleanMappings'.", "outputPath")
             .callback(p -> {
-              if(!Files.isWritable(p)) throw new IllegalArgumentException("output path is not writable");
+              if(Files.exists(p) && !Files.isWritable(p)) throw new IllegalArgumentException("output path is not writable");
               outPath.set(p);
             })
             .build(),
@@ -356,7 +356,9 @@ public class Remapper implements Util {
         currentName.add(c);
         if(depth != 0) continue;
         // deobfuscate the finished signature and append it
-        builder.append(remapSignature(toString(currentName), mappings));
+        StringBuilder builder1 = new StringBuilder();
+        currentName.forEach(builder1::append);
+        builder.append(remapSignature(builder1.toString(), mappings));
         currentName.clear();
         inWord = false;
       } else if(c == '<') {

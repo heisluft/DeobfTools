@@ -338,7 +338,7 @@ public class InnerClassDetector implements Util, MappingsProvider {
       // Enums can never be instance inner classes, so we just skip them
       if(!cn.superName.equals("java/lang/Enum")) cn.fields.stream()
           .filter(fn -> (fn.access & ACC_SYNTHETIC) != 0)
-          .forEach(fn -> getOrPut(synFields, cn.name, new HashSet<>()).add(fn.name));
+          .forEach(fn -> synFields.computeIfAbsent(cn.name, k -> new HashSet<>()).add(fn.name));
 
       cn.methods.forEach(mn -> {
         if((mn.access & ACC_SYNTHETIC) == 0) {
@@ -381,8 +381,8 @@ public class InnerClassDetector implements Util, MappingsProvider {
           }
           String outerName = argTypes[0].getInternalName();
           // Anonymous classes must have a constructor with package visibility
-          if((mn.access & 0b111) != 0) getOrPut(namedInstanceClasses, outerName, new HashSet<>()).add(cn.name);
-          else getOrPut(instanceClasses, outerName, new HashSet<>()).add(cn.name);
+          if((mn.access & 0b111) != 0) namedInstanceClasses.computeIfAbsent(outerName, k -> new HashSet<>()).add(cn.name);
+          else instanceClasses.computeIfAbsent(outerName, k -> new HashSet<>()).add(cn.name);
           reverseOuterLookup.put(cn.name, outerName);
         }
         String retDesc = mn.desc.substring(mn.desc.lastIndexOf(')') + 1);
@@ -393,9 +393,9 @@ public class InnerClassDetector implements Util, MappingsProvider {
         );
         if(methodAccessType != null) {
           if(methodAccessType == AccessType.STATIC)
-            getOrPut(staticAccessors, cn.name, new HashSet<>()).add(new Tuple2<>(mn.name, mn.desc));
+            staticAccessors.computeIfAbsent(cn.name, k -> new HashSet<>()).add(new Tuple2<>(mn.name, mn.desc));
           else
-            getOrPut(instanceAccessors, cn.name, new HashSet<>()).add(new Tuple2<>(mn.name, mn.desc));
+            instanceAccessors.computeIfAbsent(cn.name, k -> new HashSet<>()).add(new Tuple2<>(mn.name, mn.desc));
           return;
         }
 
@@ -407,7 +407,7 @@ public class InnerClassDetector implements Util, MappingsProvider {
         // This is only true for static inner getters
         if(argTypes.length == 0) {
           if(isFieldAccessMethod(mn.instructions, cn.name, maybeRetFields))
-            getOrPut(staticAccessors, cn.name, new HashSet<>()).add(new Tuple2<>(mn.name, mn.desc));
+            staticAccessors.computeIfAbsent(cn.name, k -> new HashSet<>()).add(new Tuple2<>(mn.name, mn.desc));
           return;
         }
         // This coveres all instance accessors
@@ -415,7 +415,7 @@ public class InnerClassDetector implements Util, MappingsProvider {
           if(argTypes.length == 2 && incompatibleReturnType(argTypes[1].getDescriptor(), retDesc))
             return;
           if(isFieldAccessMethod(mn.instructions, cn.name, maybeRetFields))
-            getOrPut(instanceAccessors, cn.name, new HashSet<>()).add(new Tuple2<>(mn.name, mn.desc));
+            instanceAccessors.computeIfAbsent(cn.name, k -> new HashSet<>()).add(new Tuple2<>(mn.name, mn.desc));
           return;
         }
         // Two args require the first to be of the classes type
@@ -423,7 +423,7 @@ public class InnerClassDetector implements Util, MappingsProvider {
         // the last type: static mutating accessors
         if(incompatibleReturnType(argTypes[0].getDescriptor(), retDesc)) return;
         if(isFieldAccessMethod(mn.instructions, cn.name, maybeRetFields))
-          getOrPut(staticAccessors, cn.name, new HashSet<>()).add(new Tuple2<>(mn.name, mn.desc));
+          staticAccessors.computeIfAbsent(cn.name, k -> new HashSet<>()).add(new Tuple2<>(mn.name, mn.desc));
       });
     });
 
@@ -437,12 +437,12 @@ public class InnerClassDetector implements Util, MappingsProvider {
           switch(tup._1) {
             case DISQUALIFYING:
               System.out.println("Class " + name + " cannot be anonymous: " + tup._2);
-              getOrPut(namedInstanceClasses, outer, new HashSet<>()).add(name);
+              namedInstanceClasses.computeIfAbsent(outer, k -> new HashSet<>()).add(name);
               return;
             case LEGAL:
               if(outerMethod != null) {
                 System.out.println("Class " + name + " is referenced from more than one method. It cannot be anonymous.");
-                getOrPut(namedInstanceClasses, outer, new HashSet<>()).add(name);
+                namedInstanceClasses.computeIfAbsent(outer, k -> new HashSet<>()).add(name);
                 return;
               }
               outerMethod = m;
@@ -452,9 +452,9 @@ public class InnerClassDetector implements Util, MappingsProvider {
       }
       if(outerMethod == null) {
         System.out.println("Class " + name + " is never used. It cannot be anonymous.");
-        getOrPut(namedInstanceClasses, outer, new HashSet<>()).add(name);
+        namedInstanceClasses.computeIfAbsent(outer, k -> new HashSet<>()).add(name);
       } else {
-        getOrPut(getOrPut(anonInstanceClasses, outer, new HashMap<>()), new Tuple2<>(outerMethod.name, outerMethod.desc), new HashSet<>()).add(name);
+        anonInstanceClasses.computeIfAbsent(outer, k -> new HashMap<>()).computeIfAbsent(new Tuple2<>(outerMethod.name, outerMethod.desc), k -> new HashSet<>()).add(name);
       }
     });
 

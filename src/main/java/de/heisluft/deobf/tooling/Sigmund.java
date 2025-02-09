@@ -49,7 +49,7 @@ public class Sigmund implements Util{
         if(classes.containsKey(cName)) return;
         ClassNode c = classProvider.getClassNode(cName);
         if(c == null || c.signature == null || !c.signature.startsWith("<")) return;
-        getOrPut(paramGuesses, classNode.name, new HashMap<>()).put(fieldNode.name, new Tuple2<>(fieldNode, null));
+        paramGuesses.computeIfAbsent(classNode.name, k -> new HashMap<>()).put(fieldNode.name, new Tuple2<>(fieldNode, null));
       });
     });
 

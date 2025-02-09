@@ -119,8 +119,8 @@ public class ExceptionMapper implements Util {
     }
 
     public void visitTryCatchBlock(Label start, Label end, Label handler, String type) {
-      getOrPut(tryBlocks, start, new Tuple2<>(end, new ArrayList<>()))._2.add(type);
-      getOrPut(tryEnds, end, new ArrayList<>()).add(type);
+      tryBlocks.computeIfAbsent(start, k -> new Tuple2<>(end, new ArrayList<>()))._2.add(type);
+      tryEnds.computeIfAbsent(end, k -> new ArrayList<>()).add(type);
       catchBlocks.put(handler, type);
       super.visitTryCatchBlock(start, end, handler, type);
     }
@@ -338,7 +338,7 @@ public class ExceptionMapper implements Util {
 
     public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
       String key = owner + name + descriptor;
-      if(!(owner.equals(className) && name.equals(node.name) && descriptor.equals(node.desc))) getOrPut(calledMethods, node, new HashSet<>()).add(key);
+      if(!(owner.equals(className) && name.equals(node.name) && descriptor.equals(node.desc))) calledMethods.computeIfAbsent(node, k -> new HashSet<>()).add(key);
       Type[] argTypes = Type.getArgumentTypes(descriptor);
       for(int i = 0; i < argTypes.length; i++) stack.pop();
       if(opcode != INVOKESTATIC) stack.pop();
@@ -365,7 +365,7 @@ public class ExceptionMapper implements Util {
       locals.clear();
       List<String> effExTypes = new ArrayList<>();
       for(String exType : thrownExTypes) {
-        if(isSignificant(desc(exType), thrownExTypes.stream().filter(not(exType::equals)).collect(Collectors.toList())))
+        if(isSignificant(desc(exType), thrownExTypes.stream().filter(k -> !exType.equals(k)).collect(Collectors.toList())))
           effExTypes.add(exType);
       }
       thrownExTypes.clear();
