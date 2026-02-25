@@ -91,7 +91,7 @@ public class EnumSwitchClassDetector implements Util, MappingsProvider {
       String renBase = useNode.name + "$";
       while (builder.hasClassNameTarget(renBase + i)) i++;
       builder.addClassMapping(synNode.name, renBase + i);
-      builder.addFieldMapping(synNode.name, synNode.fields.get(0).name, "$SwitchMap$" + useNode.name.replace('/', '$'));
+      builder.addFieldMapping(synNode.name, synNode.fields.get(0).name, "$SwitchMap$" + useNode.name.replace('/', '$'), synNode.fields.get(0).desc);
       InnerClassNode nestDesc = new InnerClassNode(syn, null, null, synNode.access);
       System.out.println(syn + " is an enum switch lookup class. Making it a nested class of " + useNode.name);
       useNode.innerClasses.add(nestDesc);

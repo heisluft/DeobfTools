@@ -1,6 +1,10 @@
 package de.heisluft.deobf.tooling.debug;
 
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.TypeInsnNode;
 
 /**
  * Utility class providing several toString methods for OpCodes and Accesses
@@ -404,6 +408,20 @@ public class Stringifier {
       default:
         return ""; // Labels, for example
     }
+  }
+
+  public static String stringifyInstruction(AbstractInsnNode insn) {
+    StringBuilder b = new StringBuilder(stringifyInsnOp(insn.getOpcode())).append(' ');
+    switch(insn) {
+      case MethodInsnNode min -> {
+        b.append(min.owner).append(".").append(min.name).append(min.desc);
+        if(min.itf) b.append(" (itf)");
+      }
+      case FieldInsnNode fin -> b.append(fin.owner).append("#").append(fin.name).append(": ").append(fin.desc);
+      case TypeInsnNode tin -> b.append(tin.desc);
+      default -> {}
+    }
+    return b.toString();
   }
 
   /**
