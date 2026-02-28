@@ -1,6 +1,6 @@
 [submodule "remap-tests"]
 	path = remap-tests
-	url = D:/remap-tests/
+	url = root@heisluft.de:/srv/git/remap-tests-upstream.git
 [submodule "mappings"]
 	path = mappings
 	url = git@github.com:heisluft/MappingsLibrary.git
