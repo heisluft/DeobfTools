@@ -1,9 +1,10 @@
 package de.heisluft.deobf.tooling;
 
-import de.heisluft.cli.simpleopt.OptionDefinition;
-import de.heisluft.cli.simpleopt.OptionParseResult;
-import de.heisluft.cli.simpleopt.OptionParser;
-import de.heisluft.cli.simpleopt.SubCommand;
+import de.heisluft.cli.simplecli.ArgDefinition;
+import de.heisluft.cli.simplecli.OptionDefinition;
+import de.heisluft.cli.simplecli.OptionParseResult;
+import de.heisluft.cli.simplecli.OptionParser;
+import de.heisluft.cli.simplecli.Command;
 import de.heisluft.deobf.mappings.Mappings;
 import de.heisluft.deobf.mappings.MappingsBuilder;
 import de.heisluft.deobf.mappings.MappingsHandlers;
@@ -20,7 +21,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import static de.heisluft.deobf.tooling.structure.InheritanceStatus.external;
@@ -171,7 +171,6 @@ public class ReferenceBasedMapper implements Util {
   }
 
   private final MappingsBuilder mappings = new MappingsBuilder();
-  private final JDKClassProvider jdkProvider;
   private final Map<String, ClassNode> classes;
   private final Map<String, ClassNode> refClasses;
   private final Map<String, ClassRepr> classReprs;
@@ -180,7 +179,6 @@ public class ReferenceBasedMapper implements Util {
   private final InheritanceChecker refInheritanceChecker;
 
   private ReferenceBasedMapper(JDKClassProvider jdkProvider, Path jar, Path ref, List<String> ignorePaths) throws IOException {
-    this.jdkProvider = jdkProvider;
     refClasses = parseClasses(ref, ignorePaths, SKIP_DEBUG);
     refClassReprs = new HashMap<>();
     classes = parseClasses(jar, ignorePaths, SKIP_DEBUG);
@@ -205,8 +203,9 @@ public class ReferenceBasedMapper implements Util {
       ClassNode refClass = refClasses.get(name);
       List<FieldNode> fields = new ArrayList<>(classNode.fields);
       classNode.fields.forEach(field -> {
+        List<FieldNode> options = classNode.fields.stream().filter(fn -> fn.access == field.access && fn.desc.equals(field.desc)).toList();
         List<FieldNode> matchedNodes = refClass.fields.stream().filter(fn -> fn.access == field.access && fn.desc.equals(field.desc)).toList();
-        if(matchedNodes.isEmpty()) {
+        if(matchedNodes.isEmpty() || options.size() > matchedNodes.size()) {
           System.out.println("field " + name + "#" + field.name + " " + field.desc + " not found, skipping");
           fields.remove(field);
           return;
@@ -230,14 +229,16 @@ public class ReferenceBasedMapper implements Util {
           methods.remove(method);
           return;
         }
+        List<MethodNode> options = classNode.methods.stream().filter(mn -> mn.access == method.access && mn.desc.equals(method.desc) && inheritanceChecker.getInheritance(classNode, mn.name, mn.desc, mn.access).equals(status)).toList();
         List<MethodNode> matchedNodes = refClass.methods.stream().filter(mn -> mn.access == method.access && mn.desc.equals(method.desc) && refInheritanceChecker.getInheritance(refClass, mn.name, mn.desc, mn.access).equals(status)).toList();
-        if(matchedNodes.isEmpty()) {
+        if(matchedNodes.isEmpty() || options.size() > matchedNodes.size()) {
           System.out.println("method " + name + "#" + method.name + " " + method.desc + " not found, skipping");
           methods.remove(method);
           return;
         }
         if(matchedNodes.size() == 1) {
           String refName = matchedNodes.get(0).name;
+          if(status instanceof Internal i) System.out.println("Matched method " + i.className() + "#" + refName + " from " + name);
           if(!method.name.equals(refName))
             mappings.addMethodMapping(status instanceof Internal i ? i.className() : name, method.name, method.desc, refName);
           methods.remove(method);
@@ -337,30 +338,30 @@ public class ReferenceBasedMapper implements Util {
   }
 
   public static void main(String[] args) throws IOException, NoSuchAlgorithmException {
-    OptionParser parser = new OptionParser(new SubCommand("class", null), new SubCommand("members", null));
+    OptionParser parser = new OptionParser(new Command("class", null), new Command("members", null));
     List<String> ignorePaths = new ArrayList<>();
-    AtomicReference<JDKClassProvider> classProvider = new AtomicReference<>(new JDKClassProvider());
-    parser.addOptions(
-        OptionDefinition.arg("jdk-path", Path.class)
-            .mapValue(JDKClassProvider::new)
-            .callback(classProvider::set)
-            .build(),
-        OptionDefinition.arg("ignore-paths")
-            .mapValue(s -> Arrays.asList(s.split(";")))
-            .callback(ignorePaths::addAll)
-            .build()
-    );
+    var jarArg = ArgDefinition.arg("jar", Path.class).build();
+    var refJarArg = ArgDefinition.arg("referenceJar", Path.class).build();
+    var cpOpt = OptionDefinition.valued("jdk-path", Path.class)
+        .mapValue(JDKClassProvider::new)
+        .build();
+    var ignoreOption = OptionDefinition.valued("ignore-paths")
+        .mapValue(s -> Arrays.asList(s.split(";")))
+        .callback(ignorePaths::addAll)
+        .build();
+    parser.getCommands().forEach(cmd -> {
+      cmd.addOptions(cpOpt,  ignoreOption);
+      cmd.addRequiredArgs(jarArg, refJarArg);
+    });
     OptionParseResult result = parser.parse(args);
-    List<String> additional = result.additional;
-    if(additional.size() != 2) return;
     if(result.subcommand == null) {
       System.out.println(parser.formatHelp(null, 80));
       return;
     }
     ReferenceBasedMapper bc = new ReferenceBasedMapper(
-        classProvider.get(),
-        Paths.get(additional.get(0)),
-        Paths.get(additional.get(1)),
+        result.getOrDefault(cpOpt, new JDKClassProvider()),
+        result.getValue(jarArg),
+        result.getValue(refJarArg),
         ignorePaths
     );
     switch (result.subcommand) {

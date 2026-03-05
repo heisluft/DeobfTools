@@ -215,7 +215,7 @@ public class MethodCodeAnalyzer extends MethodVisitor {
       }
       if(opcode == ATHROW) {
         String exType = stack.peek();
-        if(exType != null && isSignificant(exType, caughtExceptions)) thrownExTypes.add(Type.getType(exType).getInternalName());
+        //if(exType != null && isSignificant(exType, caughtExceptions)) thrownExTypes.add(Type.getType(exType).getInternalName());
       }
       super.visitInsn(opcode);
     }
@@ -293,7 +293,7 @@ public class MethodCodeAnalyzer extends MethodVisitor {
       if(opcode != INVOKESTATIC) stack.pop();
       if(!descriptor.endsWith(")V")) stack.push(descriptor.substring(descriptor.lastIndexOf(')') + 1));
       if(addedExceptions.containsKey(owner + "." + name + descriptor)) {
-        addedExceptions.get(owner + "." + name + descriptor).stream().filter(ex -> isSignificant(desc(ex), caughtExceptions)).forEach(thrownExTypes::add);
+        //addedExceptions.get(owner + "." + name + descriptor).stream().filter(ex -> isSignificant(desc(ex), caughtExceptions)).forEach(thrownExTypes::add);
       } else {
         ClassNode cn = provider.getClassNode(owner);
         if(cn != null) {
@@ -301,8 +301,8 @@ public class MethodCodeAnalyzer extends MethodVisitor {
               .filter(mn -> mn.name.equals(name) && mn.desc.equals(descriptor)).findFirst();
           if(op.isPresent()) {
             List<String> exTypes = op.get().exceptions;
-            for(String exType : exTypes)
-              if(isSignificant("L" + exType + ";", caughtExceptions)) thrownExTypes.add(exType);
+            //for(String exType : exTypes)
+             // if(isSignificant("L" + exType + ";", caughtExceptions)) thrownExTypes.add(exType);
           }
         }
       }
@@ -314,9 +314,9 @@ public class MethodCodeAnalyzer extends MethodVisitor {
       locals.clear();
       List<String> effExTypes = new ArrayList<>();
       for(String exType : thrownExTypes) {
-        if(isSignificant(desc(exType), thrownExTypes.stream().filter(k -> !exType.equals(k)).collect(
-            Collectors.toList())))
-          effExTypes.add(exType);
+        //if(isSignificant(desc(exType), thrownExTypes.stream().filter(k -> !exType.equals(k)).collect(
+        //    Collectors.toList())))
+        //  effExTypes.add(exType);
       }
       thrownExTypes.clear();
       if(!effExTypes.isEmpty()) {

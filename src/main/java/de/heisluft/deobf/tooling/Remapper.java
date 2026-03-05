@@ -1,8 +1,9 @@
 package de.heisluft.deobf.tooling;
 
-import de.heisluft.cli.simpleopt.OptionParseResult;
-import de.heisluft.cli.simpleopt.SubCommand;
-import de.heisluft.cli.simpleopt.OptionParser;
+import de.heisluft.cli.simplecli.ArgDefinition;
+import de.heisluft.cli.simplecli.OptionParseResult;
+import de.heisluft.cli.simplecli.Command;
+import de.heisluft.cli.simplecli.OptionParser;
 import de.heisluft.deobf.mappings.Mappings;
 import de.heisluft.deobf.mappings.MappingsHandlers;
 import de.heisluft.deobf.mappings.MappingsHandler;
@@ -26,9 +27,11 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-import static de.heisluft.cli.simpleopt.OptionDefinition.*;
+import static de.heisluft.cli.simplecli.OptionDefinition.*;
+import static de.heisluft.cli.simplecli.OptionParser.*;
 
 //TODO: Think about a clever way to restore generic signatures on fields and based on that, methods
 //TODO: Come up with an idea on how to restore generic signatures of obfuscated classes with the help of the specialized subclass bridge methods
@@ -53,29 +56,34 @@ public class Remapper implements Util {
     AtomicReference<Mappings> supplementaryMappings = new AtomicReference<>();
     AtomicBoolean stripBridgeAccess = new AtomicBoolean(true);
     OptionParser parser = new OptionParser(
-        new SubCommand("map", "Generates obfuscation mappings from the <input> jar and writes them to <mappings>."),
-        new SubCommand("remap", "Remaps the <input> jar with the specified <mappings> file and writes it to [output]. If the outputPath option is not specified, it will default to <input>-deobf.jar"),
-        new SubCommand("genReverseMappings", "Generates reverse obfuscation mappings from the <input> mappings and writes them to <mappings>."),
-        new SubCommand("genMediatorMappings", "Writes mappings mapping the output of <input> to the output of <mappings> to [output]."),
-        new SubCommand("genConversionMappings", "Writes mappings mapping the input of <input> to the output of <mappings> to [output]."),
-        new SubCommand("cleanMappings", "Writes a clean version of the mappings at <input> to <mapping>")
+        new Command("map", "Generates obfuscation mappings from the <input> jar and writes them to <mappings>."),
+        new Command("remap", "Remaps the <input> jar with the specified <mappings> file and writes it to [output]. If the outputPath option is not specified, it will default to <input>-deobf.jar"),
+        new Command("genReverseMappings", "Generates reverse obfuscation mappings from the <input> mappings and writes them to <mappings>."),
+        new Command("genMediatorMappings", "Writes mappings mapping the output of <input> to the output of <mappings> to [output]."),
+        new Command("genConversionMappings", "Writes mappings mapping the input of <input> to the output of <mappings> to [output]."),
+        new Command("cleanMappings", "Writes a clean version of the mappings at <input> to <mapping>")
     );
-    parser.addOptions(
-        arg("ignorePaths")
-            .validFor("map", "remap")
-            .description("A List of paths to ignore from the input jar. Multiple Paths are separated using ; (semicolon). These Paths are treated as wildcards. For example, -i /com;/org/unwanted/ would lead the program to exclude all paths starting with either '/com' or '/org/unwanted/' eg. '/com/i.class', '/computer.xml', '/org/unwanted/b.gif'. This option will be ignored for tasks only operating on mappings", "pathsToIgnore")
-            .callback(s -> ignoredPaths.addAll(Arrays.asList(s.split(";"))))
-            .build(),
-        arg("outputPath", Path.class)
-            .validFor("remap", "genConversionMappings", "genMediatorMappings")
-            .description("Overrides the path where the remapped jar will be written to. This option will be ignored for 'map', 'genReverseMappings' and 'cleanMappings'.", "outputPath")
-            .callback(p -> {
-              if(Files.exists(p) && !Files.isWritable(p)) throw new IllegalArgumentException("output path is not writable");
-              outPath.set(p);
-            })
-            .build(),
-        arg("supplementary", Path.class)
-            .validFor("map")
+    parser.addOptions(eachOf("map", "remap"), valued("ignorepaths")
+        .description("A List of paths to ignore from the input jar. Multiple Paths are separated using ; (semicolon). These Paths are treated as wildcards. For example, -i /com;/org/unwanted/ would lead the program to exclude all paths starting with either '/com' or '/org/unwanted/' eg. '/com/i.class', '/computer.xml', '/org/unwanted/b.gif'. This option will be ignored for tasks only operating on mappings", "pathsToIgnore")
+        .callback(s -> ignoredPaths.addAll(Arrays.asList(s.split(";"))))
+        .build()
+    );
+    parser.addOptions(eachOf("remap", "genConversionMappings", "genMediatorMappings"), valued("outputPath", Path.class)
+        .description("Overrides the path where the remapped jar will be written to. This option will be ignored for 'map', 'genReverseMappings' and 'cleanMappings'.", "outputPath")
+        .callback(p -> {
+          if(Files.exists(p) && !Files.isWritable(p)) throw new IllegalArgumentException("output path is not writable");
+          outPath.set(p);
+        })
+        .build()
+    );
+    parser.addOptions(eachOf("remap"), flag("noBridgeStrip")
+        .shorthand('b')
+        .description("Valid only for 'remap'. Skips stripping of bridge and synthetic access modifiers for bridge methods.")
+        .whenSet(() -> stripBridgeAccess.set(false))
+        .build()
+    );
+    parser.addOptions(eachOf("map"),
+        valued("supplementary", Path.class)
             .description("Valid only for 'map'. Provides supplementary mappings. For these, no new mappings will be generated, instead they will directly be merged into the output mappings file", "mappingsPath")
             .callback(p -> {
               if(!Files.isReadable(p)) throw new IllegalArgumentException("mappings path does not exist or is not readable");
@@ -86,41 +94,35 @@ public class Remapper implements Util {
               }
             })
             .build(),
-        arg("jdk", Path.class)
-            .validFor("map")
+        valued("jdk", Path.class)
             .description("Valid only for 'map'. Path to JDK, used for inferring exceptions", "jdkPath")
             .callback(p -> {
               if(!Files.isDirectory(p)) throw new IllegalArgumentException("jdk path does not point to a directory");
               jdkPath.set(p);
             })
-            .build(),
-        flag("noBridgeStrip").shorthand('b')
-            .validFor("remap")
-            .description("Valid only for 'remap'. Skips stripping of bridge and synthetic access modifiers for bridge methods.")
-            .whenSet(() -> stripBridgeAccess.set(false))
-            .build(),
-        flag("help")
+            .build()
+    );
+
+    parser.addOptions(ROOT_COMMAND, flag("help")
             .description("Displays this message.")
             .whenSet(() -> displayHelpAndExit(parser))
             .build()
     );
+
+    var inArg = ArgDefinition.arg("inputPath", Path.class).build();
+    var mappingsArg = ArgDefinition.arg("mappingsPath", Path.class).build();
+    parser.addRequiredArgs(Predicate.not(ROOT_COMMAND), inArg, mappingsArg);
     OptionParseResult result = parser.parse(args);
     if(result.subcommand == null)  {
       displayHelpAndExit(parser);
       return;
     }
     String action = result.subcommand;
-    List<String> remaining = result.additional;
-    if(remaining.size() < 2) {
-      System.out.println("Insufficient arguments, expected 2. Run with --help for more information.");
-      System.exit(1);
-    }
-    if(remaining.size() > 2) System.out.println("Ignored arguments: " + remaining.subList(2, remaining.size()));
 
-    Path inputPath = Paths.get(remaining.get(0));
-    Path mappingsPath = Paths.get(remaining.get(1));
+    Path inputPath = result.getValue(inArg);
+    Path mappingsPath = result.getValue(mappingsArg);
 
-    if(outPath.get() == null) outPath.set(Paths.get("remap".equals(action) ? remaining.get(0).substring(0, remaining.get(0).lastIndexOf('.')) + "-deobf.jar" : "out.frg"));
+    if(outPath.get() == null) outPath.set(Paths.get("remap".equals(action) ? inputPath.toString().substring(0, inputPath.toString().lastIndexOf('.')) + "-deobf.jar" : "out.frg"));
 
     try {
       MappingsHandler frgProvider = MappingsHandlers.findHandler("frg");
