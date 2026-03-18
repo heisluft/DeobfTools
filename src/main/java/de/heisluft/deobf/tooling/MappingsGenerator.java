@@ -4,7 +4,6 @@ import de.heisluft.deobf.mappings.Mappings;
 import de.heisluft.deobf.mappings.MappingsBuilder;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
-import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
@@ -206,13 +205,13 @@ public class MappingsGenerator implements Util {
       if(RESERVED_WORDS.contains(modifiedName)) {
         StringBuilder modBuilder = new StringBuilder(modifiedName);
         // Another class could be named _if, in that case this class will be named __if
-        while(classNodes.containsKey(modBuilder.toString()) || builder.hasClassNameTarget(modBuilder.toString())) modBuilder.insert(0, "_");
+        while(classNodes.containsKey(modBuilder.toString()) || builder.hasClassRevMapping(modBuilder.toString())) modBuilder.insert(0, "_");
         modifiedName = modBuilder.toString();
       }
       // Reserved Words should be escaped automatically
       else if(modifiedName.contains("/") && RESERVED_WORDS.contains(modifiedName.substring(modifiedName.lastIndexOf('/') + 1))) {
         // Again, we need to avoid naming blah/if to blah/_if if there is already a so named class
-        while(classNodes.containsKey(modifiedName) || builder.hasClassNameTarget(modifiedName)) {
+        while(classNodes.containsKey(modifiedName) || builder.hasClassRevMapping(modifiedName)) {
           int lastSlash = modifiedName.lastIndexOf('/');
           modifiedName = modifiedName.substring(0, lastSlash) + "/_" + modifiedName.substring(lastSlash + 1);
         }
@@ -239,7 +238,7 @@ public class MappingsGenerator implements Util {
       gatherInheritedMethods(cn.superName);
       cn.interfaces.forEach(this::gatherInheritedMethods);
       cn.fields.forEach(fn -> {
-        if(builder.hasFieldMapping(cn.name, fn.name)) return;
+        if(builder.hasFieldMapping(cn.name, fn.name, fn.desc)) return;
         // Automatically emit enum $VALUES mapping
         if(cn.superName.equals(Type.getInternalName(Enum.class)) && fn.desc.equals("[L" + cn.name + ";") && hasAll(fn.access, Opcodes.ACC_STATIC, Opcodes.ACC_SYNTHETIC, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE)) {
           builder.addFieldMapping(cn.name, fn.name, fn.desc, "$VALUES");

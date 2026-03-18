@@ -471,7 +471,7 @@ public class InnerClassDetector implements Util, MappingsProvider {
           innerNode.outerClass = outer;
           int i = 1;
           String base = outer + "$";
-          while (classes.containsKey(base + i) || builder.hasClassNameTarget(base + i)) i++;
+          while (classes.containsKey(base + i) || builder.hasClassRevMapping(base + i)) i++;
           builder.addClassMapping(inner, outer + "$" + i);
           if(classes.get(outer).methods.stream().noneMatch(mn -> mn.name.equals(method._1) && mn.desc.equals(method._2) && (mn.access & ACC_STATIC) != 0)) {
             FieldNode[] syns = innerNode.fields.stream().filter(fn -> (fn.access & ACC_SYNTHETIC) != 0).toArray(FieldNode[]::new);

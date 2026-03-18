@@ -89,7 +89,7 @@ public class EnumSwitchClassDetector implements Util, MappingsProvider {
       ClassNode synNode = classes.get(syn);
       int i = 1;
       String renBase = useNode.name + "$";
-      while (builder.hasClassNameTarget(renBase + i)) i++;
+      while (builder.hasClassRevMapping(renBase + i)) i++;
       builder.addClassMapping(synNode.name, renBase + i);
       builder.addFieldMapping(synNode.name, synNode.fields.get(0).name, "$SwitchMap$" + useNode.name.replace('/', '$'), synNode.fields.get(0).desc);
       InnerClassNode nestDesc = new InnerClassNode(syn, null, null, synNode.access);
