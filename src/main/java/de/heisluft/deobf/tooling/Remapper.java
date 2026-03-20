@@ -37,10 +37,8 @@ import static de.heisluft.cli.simplecli.OptionParser.*;
 //TODO: Come up with an idea on how to restore generic signatures of obfuscated classes with the help of the specialized subclass bridge methods
 //The Ultimate Goal would be a Remapper which is smart enough to generate the specialized methods from bridge methods
 public class Remapper implements Util {
-  //className -> methodName + methodDesc
-  private static final Map<String, Set<String>> INHERITABLE_METHODS = new HashMap<>();
-  //className -> fieldName + ":" + fieldDesc
-  private static final Map<String, Set<String>> SUBCLASS_ACCESSIBLE_FIELDS = new HashMap<>();
+  private static final Map<String, Set<ClassMember>> INHERITABLE_METHODS = new HashMap<>();
+  private static final Map<String, Set<ClassMember>> SUBCLASS_ACCESSIBLE_FIELDS = new HashMap<>();
 
   private final Map<String, ClassNode> classNodes = new HashMap<>();
 
@@ -168,7 +166,7 @@ public class Remapper implements Util {
   }
 
   private Set<String> findMethodExceptionsRec(ClassNode cls, String mdName, String mdDesc, Mappings mappings) {
-    if(INHERITABLE_METHODS.getOrDefault(cls.name, new HashSet<>(0)).contains(mdName + mdDesc) && mappings.hasMethodMapping(cls.name, mdName, mdDesc)) return mappings.getExceptions(cls.name, mdName, mdDesc);
+    if(INHERITABLE_METHODS.getOrDefault(cls.name, new HashSet<>(0)).contains(new ClassMember(mdName, mdDesc)) && mappings.hasMethodMapping(cls.name, mdName, mdDesc)) return mappings.getExceptions(cls.name, mdName, mdDesc);
     Set<String> result;
     if(classNodes.containsKey(cls.superName) && mappings.hasClassMapping(cls.superName) && (result = findMethodExceptionsRec(classNodes.get(cls.superName), mdName, mdDesc, mappings)) != null) return result;
     for(String iface : cls.interfaces) if(classNodes.containsKey(iface) && mappings.hasClassMapping(iface) && (result = findMethodExceptionsRec(classNodes.get(iface), mdName, mdDesc, mappings)) != null) return result;
@@ -182,7 +180,7 @@ public class Remapper implements Util {
   }
 
   private String findMethodMappingRec(ClassNode cls, String mdName, String mdDesc, Mappings mappings) {
-    if(INHERITABLE_METHODS.getOrDefault(cls.name, new HashSet<>(0)).contains(mdName + mdDesc) && mappings.hasMethodMapping(cls.name, mdName, mdDesc)) return mappings.getMethodName(cls.name, mdName, mdDesc);
+    if(INHERITABLE_METHODS.getOrDefault(cls.name, new HashSet<>(0)).contains(new ClassMember(mdName, mdDesc)) && mappings.hasMethodMapping(cls.name, mdName, mdDesc)) return mappings.getMethodName(cls.name, mdName, mdDesc);
     String result;
     if(classNodes.containsKey(cls.superName) && !(result = findMethodMappingRec(classNodes.get(cls.superName), mdName, mdDesc, mappings)).equals(mdName)) return result;
     for(String iface : cls.interfaces) if(classNodes.containsKey(iface) && !(result = findMethodMappingRec(classNodes.get(iface), mdName, mdDesc, mappings)).equals(mdName)) return result;
@@ -195,7 +193,7 @@ public class Remapper implements Util {
   }
 
   private String findFieldMappingRec(ClassNode cls, String fName, String fDesc, Mappings mappings) {
-    if(SUBCLASS_ACCESSIBLE_FIELDS.getOrDefault(cls.name, new HashSet<>(0)).contains(fName + ":" + fDesc) && mappings.hasFieldMapping(cls.name, fName, fDesc)) return mappings.getFieldName(cls.name, fName, fDesc);
+    if(SUBCLASS_ACCESSIBLE_FIELDS.getOrDefault(cls.name, new HashSet<>(0)).contains(new ClassMember(fName, fDesc)) && mappings.hasFieldMapping(cls.name, fName, fDesc)) return mappings.getFieldName(cls.name, fName, fDesc);
     if(classNodes.containsKey(cls.superName)) return findFieldMappingRec(classNodes.get(cls.superName), fName, fDesc, mappings);
     return fName;
   }
@@ -217,11 +215,11 @@ public class Remapper implements Util {
               mn.access ^= Opcodes.ACC_SYNTHETIC;
             }
             if(Util.hasNone(mn.access, Opcodes.ACC_PRIVATE))
-              INHERITABLE_METHODS.computeIfAbsent(node.name, s -> new HashSet<>()).add(mn.name + mn.desc);
+              INHERITABLE_METHODS.computeIfAbsent(node.name, s -> new HashSet<>()).add(new ClassMember(mn.name, mn.desc));
           });
           node.fields.forEach(fn -> {
             if(Util.hasNone(fn.access, Opcodes.ACC_PRIVATE))
-              SUBCLASS_ACCESSIBLE_FIELDS.computeIfAbsent(node.name, s -> new HashSet<>()).add(fn.name + ":" + fn.desc);
+              SUBCLASS_ACCESSIBLE_FIELDS.computeIfAbsent(node.name, s -> new HashSet<>()).add(new ClassMember(fn.name, fn.desc));
           });
         }
     );

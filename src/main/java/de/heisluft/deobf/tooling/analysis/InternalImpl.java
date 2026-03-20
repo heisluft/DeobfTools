@@ -1,3 +1,3 @@
-package de.heisluft.deobf.tooling.structure;
+package de.heisluft.deobf.tooling.analysis;
 
 record InternalImpl(String className) implements InheritanceStatus.Internal {}

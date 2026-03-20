@@ -1,4 +1,4 @@
-package de.heisluft.deobf.tooling.structure;
+package de.heisluft.deobf.tooling.analysis;
 
 public sealed interface InheritanceStatus permits InheritanceStatus.None,
     InheritanceStatus.Internal, InheritanceStatus.External {

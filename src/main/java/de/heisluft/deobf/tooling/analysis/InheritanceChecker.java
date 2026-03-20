@@ -1,4 +1,4 @@
-package de.heisluft.deobf.tooling.structure;
+package de.heisluft.deobf.tooling.analysis;
 
 import de.heisluft.deobf.tooling.JDKClassProvider;
 import de.heisluft.deobf.tooling.Util;
@@ -6,9 +6,9 @@ import org.objectweb.asm.tree.ClassNode;
 
 import java.util.Map;
 
-import static de.heisluft.deobf.tooling.structure.InheritanceStatus.inside;
-import static de.heisluft.deobf.tooling.structure.InheritanceStatus.none;
-import static de.heisluft.deobf.tooling.structure.InheritanceStatus.external;
+import static de.heisluft.deobf.tooling.analysis.InheritanceStatus.inside;
+import static de.heisluft.deobf.tooling.analysis.InheritanceStatus.none;
+import static de.heisluft.deobf.tooling.analysis.InheritanceStatus.external;
 import static org.objectweb.asm.Opcodes.ACC_PRIVATE;
 import static org.objectweb.asm.Opcodes.ACC_STATIC;
 
