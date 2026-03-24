@@ -440,7 +440,7 @@ public class ExceptionMapper implements Util {
       if(exDesc.equals("null")) return false;
       String exType = exDesc.substring(1, exDesc.length() - 1);
       if(caughtExceptions.stream().filter(Objects::nonNull).anyMatch(ex-> {
-        if(exType.equals(ex)) return false;
+        if(exType.equals(ex)) return true;
         String s = exType;
         while (classNodes.containsKey(s)) {
           s = classNodes.get(s).superName;

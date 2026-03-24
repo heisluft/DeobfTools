@@ -199,7 +199,7 @@ public class MappingsGenerator implements Util {
     if(!Files.isReadable(input)) throw new IOException("Cannot read from " + input);
     classNodes.putAll(parseClasses(input));
     Set<String> packages = classNodes.values().stream().filter(p -> p.name.contains("/")).map(p -> p.name.substring(0, p.name.lastIndexOf("/"))).collect(Collectors.toSet());
-    classNodes.values().stream().map(n -> n.name).filter(cn -> ignored.stream().noneMatch(("/" + cn)::startsWith)).filter(cn -> !builder.hasClassMapping(cn)).forEach(cn -> {
+    classNodes.values().stream().map(n -> n.name).filter(cn -> ignored.stream().noneMatch(cn::startsWith)).filter(cn -> !builder.hasClassMapping(cn)).forEach(cn -> {
       String modifiedName = cn;
       // Reserved Words should be escaped automatically
       if(RESERVED_WORDS.contains(modifiedName)) {
@@ -230,11 +230,15 @@ public class MappingsGenerator implements Util {
         builder.addClassMapping(cn, modifiedName);
     });
 
-    builder.addExceptions(new ExceptionMapper(provider).analyzeExceptions(input));
+    new ExceptionMapper(provider).analyzeExceptions(input).forEach((s, exceptions) -> {
+      if(ignored.stream().anyMatch(s::startsWith)) return;
+      int dot = s.indexOf('.'), lPar = s.indexOf('(');
+      builder.addExceptions(s.substring(0, dot), s.substring(dot + 1, lPar), s.substring(lPar), exceptions);
+    });
 
     AtomicInteger fieldCounter = new AtomicInteger(1);
     AtomicInteger methodCounter = new AtomicInteger(1);
-    classNodes.values().stream().sorted(Comparator.comparing(classNode -> classNode.name)).filter(c -> ignored.stream().noneMatch(("/" + c.name)::startsWith)).forEach(cn -> {
+    classNodes.values().stream().sorted(Comparator.comparing(classNode -> classNode.name)).filter(c -> ignored.stream().noneMatch(c.name::startsWith)).forEach(cn -> {
       gatherInheritedMethods(cn.superName);
       cn.interfaces.forEach(this::gatherInheritedMethods);
       cn.fields.forEach(fn -> {

@@ -1,6 +1,7 @@
 package de.heisluft.deobf.tooling;
 
 import de.heisluft.cli.simplecli.ArgDefinition;
+import de.heisluft.cli.simplecli.OptionDefinition;
 import de.heisluft.cli.simplecli.OptionParseResult;
 import de.heisluft.cli.simplecli.Command;
 import de.heisluft.cli.simplecli.OptionParser;
@@ -49,7 +50,9 @@ public class Remapper implements Util {
 
   public static void main(String[] args) throws IOException {
     List<String> ignoredPaths = new ArrayList<>();
-    AtomicReference<Path> outPath = new AtomicReference<>();
+    ArgDefinition<Path> outPath = ArgDefinition.arg("outputPath", Path.class).callback(p -> {
+          if(Files.exists(p) && !Files.isWritable(p)) throw new IllegalArgumentException("output path is not writable");
+        }).build();
     AtomicReference<Path> jdkPath = new AtomicReference<>();
     AtomicReference<Mappings> supplementaryMappings = new AtomicReference<>();
     AtomicBoolean stripBridgeAccess = new AtomicBoolean(true);
@@ -66,14 +69,7 @@ public class Remapper implements Util {
         .callback(s -> ignoredPaths.addAll(Arrays.asList(s.split(";"))))
         .build()
     );
-    parser.addOptions(eachOf("remap", "genConversionMappings", "genMediatorMappings"), valued("outputPath", Path.class)
-        .description("Overrides the path where the remapped jar will be written to. This option will be ignored for 'map', 'genReverseMappings' and 'cleanMappings'.", "outputPath")
-        .callback(p -> {
-          if(Files.exists(p) && !Files.isWritable(p)) throw new IllegalArgumentException("output path is not writable");
-          outPath.set(p);
-        })
-        .build()
-    );
+    parser.addRequiredArgs(eachOf("remap", "genConversionMappings", "genMediatorMappings"), outPath);
     parser.addOptions(eachOf("remap"), flag("noBridgeStrip")
         .shorthand('b')
         .description("Valid only for 'remap'. Skips stripping of bridge and synthetic access modifiers for bridge methods.")
@@ -120,37 +116,38 @@ public class Remapper implements Util {
     Path inputPath = result.getValue(inArg);
     Path mappingsPath = result.getValue(mappingsArg);
 
-    if(outPath.get() == null) outPath.set(Paths.get("remap".equals(action) ? inputPath.toString().substring(0, inputPath.toString().lastIndexOf('.')) + "-deobf.jar" : "out.frg"));
-
     try {
-      MappingsHandler frgProvider = MappingsHandlers.findHandler("frg");
-      MappingsHandler firstProv = MappingsHandlers.findFileHandler(mappingsPath.toString());
+      MappingsHandler fallback = MappingsHandlers.findHandler("frg");
+      MappingsHandler iHandler = MappingsHandlers.findFileHandler(inputPath.toString());
+      MappingsHandler mHandler = MappingsHandlers.findFileHandler(mappingsPath.toString());
       switch(action) {
         case "cleanMappings":
-          frgProvider.writeMappings(firstProv.parseMappings(inputPath).clean(), mappingsPath);
+          mHandler.writeMappings(mHandler.parseMappings(inputPath).clean(), mappingsPath);
           break;
         case "genMediatorMappings":
-          Mappings a2b = firstProv.parseMappings(inputPath);
-          Mappings a2c = MappingsHandlers.findFileHandler(mappingsPath.toString()).parseMappings(mappingsPath);
-          frgProvider.writeMappings(a2b.generateMediatorMappings(a2c), outPath.get());
+          Mappings a2b = iHandler.parseMappings(inputPath);
+          Mappings a2c = mHandler.parseMappings(mappingsPath);
+          MappingsHandler oHandler = MappingsHandlers.findFileHandler(result.getValue(outPath).toString());
+          (oHandler != null ? oHandler : fallback).writeMappings(a2b.generateMediatorMappings(a2c), result.getValue(outPath));
           break;
         case "genConversionMappings":
-          a2b = firstProv.parseMappings(inputPath);
-          Mappings b2c = MappingsHandlers.findFileHandler(mappingsPath.toString()).parseMappings(mappingsPath);
-          frgProvider.writeMappings(a2b.generateConversionMethods(b2c), outPath.get());
+          a2b = iHandler.parseMappings(inputPath);
+          Mappings b2c = mHandler.parseMappings(mappingsPath);
+          oHandler = MappingsHandlers.findFileHandler(result.getValue(outPath).toString());
+          (oHandler != null ? oHandler : fallback).writeMappings(a2b.generateConversionMethods(b2c), result.getValue(outPath));
           break;
         case "remap":
-          if(outPath.get().equals(inputPath)) {
+          if(result.getValue(outPath).equals(inputPath)) {
             System.out.println("The output path must not match the input path.");
             return;
           }
-          new Remapper().remapJar(inputPath, mappingsPath, outPath.get(), ignoredPaths, stripBridgeAccess.get());
+          new Remapper().remapJar(inputPath, mHandler.parseMappings(mappingsPath), result.getValue(outPath), ignoredPaths, stripBridgeAccess.get());
           break;
         case "genReverseMappings":
-          frgProvider.writeMappings(firstProv.parseMappings(inputPath).generateReverseMappings(), mappingsPath);
+          mHandler.writeMappings(mHandler.parseMappings(inputPath).generateReverseMappings(), mappingsPath);
           break;
         default:
-          frgProvider.writeMappings(new MappingsGenerator(supplementaryMappings.get(), jdkPath.get() == null ? new JDKClassProvider() : new JDKClassProvider(jdkPath.get())).generateMappings(inputPath, ignoredPaths), mappingsPath);
+          mHandler.writeMappings(new MappingsGenerator(supplementaryMappings.get(), jdkPath.get() == null ? new JDKClassProvider() : new JDKClassProvider(jdkPath.get())).generateMappings(inputPath, ignoredPaths), mappingsPath);
           break;
       }
     } catch(IOException e) {
@@ -202,9 +199,8 @@ public class Remapper implements Util {
     return (access & Opcodes.ACC_SYNTHETIC) == Opcodes.ACC_SYNTHETIC;
   }
 
-  private void remapJar(Path inputPath, Path mappingsPath, Path outputPath, List<String> ignorePaths, boolean stripBridgeAccess) throws IOException {
+  private void remapJar(Path inputPath, Mappings mappings, Path outputPath, List<String> ignorePaths, boolean stripBridgeAccess) throws IOException {
     classNodes.putAll(parseClasses(inputPath, ignorePaths, 0));
-    Mappings mappings = MappingsHandlers.findFileHandler(mappingsPath.toString()).parseMappings(mappingsPath);
     classNodes.values().forEach(node -> {
           node.methods.forEach(mn -> {
             if(stripBridgeAccess && isSynthetic(mn.access) && !Type.getInternalName(Enum.class).equals(node.superName) && (mn.access & Opcodes.ACC_BRIDGE) == Opcodes.ACC_BRIDGE) {
