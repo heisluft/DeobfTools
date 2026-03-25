@@ -85,7 +85,7 @@ public class Remapper implements Util {
     );
     parser.addOptions(eachOf("map"),
         valued("supplementary", Path.class)
-            .description("Valid only for 'map'. Provides supplementary mappings. For these, no new mappings will be generated, instead they will directly be merged into the output mappings file", "mappingsPath")
+            .description("Valid only for 'map'. Provides supplementary mappings. For these, no new mappings will be generated, instead they will directly be merged into the output mappings file. ", "mappingsPath")
             .callback(p -> {
               if(!Files.isReadable(p)) throw new IllegalArgumentException("mappings path does not exist or is not readable");
               try {
@@ -234,7 +234,7 @@ public class Remapper implements Util {
       n.methods.forEach(mn -> {
         Set<String> exceptions = findMethodExceptions(n, mn.name, mn.desc, mappings, explicitExceptions);
         if(exceptions != null && !exceptions.isEmpty()) {
-          if(mn.exceptions != null) exceptions.stream().sorted().forEach(mn.exceptions::add);
+          if(mn.exceptions != null) exceptions.stream().sorted().map(mappings::getClassName).forEach(mn.exceptions::add);
           else {
             mn.exceptions = new ArrayList<>(exceptions);
             mn.exceptions.sort(Comparator.naturalOrder());
