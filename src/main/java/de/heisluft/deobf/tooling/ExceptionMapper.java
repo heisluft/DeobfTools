@@ -517,8 +517,8 @@ public class ExceptionMapper implements Util {
         }
         return false;
       })) return false;
-      if(ExceptionMapper.exClasses.contains(exType)) return true;
       if(ExceptionMapper.runtimeExesAndErrors.contains(exType)) return false;
+      if(ExceptionMapper.exClasses.contains(exType)) return true;
       ClassNode nExType = provider.getClassNode(exType);
       ClassNode errNode = provider.getClassNode("java/lang/Error");
       ClassNode rExNode = provider.getClassNode("java/lang/RuntimeException");
