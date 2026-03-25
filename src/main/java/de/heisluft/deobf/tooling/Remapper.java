@@ -56,25 +56,32 @@ public class Remapper implements Util {
     AtomicReference<Path> jdkPath = new AtomicReference<>();
     AtomicReference<Mappings> supplementaryMappings = new AtomicReference<>();
     AtomicBoolean stripBridgeAccess = new AtomicBoolean(true);
+    AtomicBoolean explicitExceptions = new AtomicBoolean(false);
     OptionParser parser = new OptionParser(
         new Command("map", "Generates obfuscation mappings from the <input> jar and writes them to <mappings>."),
-        new Command("remap", "Remaps the <input> jar with the specified <mappings> file and writes it to [output]. If the outputPath option is not specified, it will default to <input>-deobf.jar"),
+        new Command("remap", "Remaps the <input> jar with the specified <mappings> file and writes it to <output>."),
         new Command("genReverseMappings", "Generates reverse obfuscation mappings from the <input> mappings and writes them to <mappings>."),
-        new Command("genMediatorMappings", "Writes mappings mapping the output of <input> to the output of <mappings> to [output]."),
-        new Command("genConversionMappings", "Writes mappings mapping the input of <input> to the output of <mappings> to [output]."),
-        new Command("cleanMappings", "Writes a clean version of the mappings at <input> to <mapping>")
+        new Command("genMediatorMappings", "Writes mappings mapping the output of <input> to the output of <mappings> to <output>."),
+        new Command("genConversionMappings", "Writes mappings mapping the input of <input> to the output of <mappings> to <output>."),
+        new Command("cleanMappings", "Writes a clean version of the mappings at <input> to <mapping>.")
     );
     parser.addOptions(eachOf("map", "remap"), valued("ignorepaths")
-        .description("A List of paths to ignore from the input jar. Multiple Paths are separated using ; (semicolon). These Paths are treated as wildcards. For example, -i /com;/org/unwanted/ would lead the program to exclude all paths starting with either '/com' or '/org/unwanted/' eg. '/com/i.class', '/computer.xml', '/org/unwanted/b.gif'. This option will be ignored for tasks only operating on mappings", "pathsToIgnore")
+        .description("A List of paths to ignore from the input jar. Multiple Paths are separated using ; (semicolon). These Paths are treated as wildcards. For example, -i com;org/unwanted/ would lead the program to exclude all paths starting with either 'com' or 'org/unwanted/' eg. 'com/i.class', 'computer.xml', 'org/unwanted/b.gif'. This option will be ignored for tasks only operating on mappings", "pathsToIgnore")
         .callback(s -> ignoredPaths.addAll(Arrays.asList(s.split(";"))))
         .build()
     );
     parser.addRequiredArgs(eachOf("remap", "genConversionMappings", "genMediatorMappings"), outPath);
-    parser.addOptions(eachOf("remap"), flag("noBridgeStrip")
-        .shorthand('b')
-        .description("Valid only for 'remap'. Skips stripping of bridge and synthetic access modifiers for bridge methods.")
-        .whenSet(() -> stripBridgeAccess.set(false))
-        .build()
+    parser.addOptions(eachOf("remap"),
+        flag("noBridgeStrip")
+            .shorthand('b')
+            .description("Valid only for 'remap'. Skips stripping of bridge and synthetic access modifiers for bridge methods.")
+            .whenSet(() -> stripBridgeAccess.set(false))
+            .build(),
+        flag("explicitExceptions")
+            .shorthand('e')
+            .description("Valid only for 'remap'. If set, exceptions for a method don't automatically propagate downwards. Requires explicitly added exceptions within mappings.")
+            .whenSet(() -> explicitExceptions.set(true))
+            .build()
     );
     parser.addOptions(eachOf("map"),
         valued("supplementary", Path.class)
@@ -141,7 +148,7 @@ public class Remapper implements Util {
             System.out.println("The output path must not match the input path.");
             return;
           }
-          new Remapper().remapJar(inputPath, mHandler.parseMappings(mappingsPath), result.getValue(outPath), ignoredPaths, stripBridgeAccess.get());
+          new Remapper().remapJar(inputPath, mHandler.parseMappings(mappingsPath), result.getValue(outPath), ignoredPaths, stripBridgeAccess.get(), explicitExceptions.get());
           break;
         case "genReverseMappings":
           mHandler.writeMappings(mHandler.parseMappings(inputPath).generateReverseMappings(), mappingsPath);
@@ -155,11 +162,11 @@ public class Remapper implements Util {
     }
   }
 
-  private Set<String> findMethodExceptions(ClassNode cls, String mdName, String mdDesc, Mappings mappings) {
+  private Set<String> findMethodExceptions(ClassNode cls, String mdName, String mdDesc, Mappings mappings, boolean disableRecursion) {
     //Exception found
     if(mappings.hasMethodMapping(cls.name, mdName, mdDesc)) return mappings.getExceptions(cls.name, mdName, mdDesc);
     //Try inheritance
-    return findMethodExceptionsRec(cls, mdName, mdDesc, mappings);
+    return disableRecursion ? null : findMethodExceptionsRec(cls, mdName, mdDesc, mappings);
   }
 
   private Set<String> findMethodExceptionsRec(ClassNode cls, String mdName, String mdDesc, Mappings mappings) {
@@ -199,7 +206,7 @@ public class Remapper implements Util {
     return (access & Opcodes.ACC_SYNTHETIC) == Opcodes.ACC_SYNTHETIC;
   }
 
-  private void remapJar(Path inputPath, Mappings mappings, Path outputPath, List<String> ignorePaths, boolean stripBridgeAccess) throws IOException {
+  private void remapJar(Path inputPath, Mappings mappings, Path outputPath, List<String> ignorePaths, boolean stripBridgeAccess, boolean explicitExceptions) throws IOException {
     classNodes.putAll(parseClasses(inputPath, ignorePaths, 0));
     classNodes.values().forEach(node -> {
           node.methods.forEach(mn -> {
@@ -225,7 +232,7 @@ public class Remapper implements Util {
         f.desc = mappings.remapDescriptor(f.desc);
       });
       n.methods.forEach(mn -> {
-        Set<String> exceptions = findMethodExceptions(n, mn.name, mn.desc, mappings);
+        Set<String> exceptions = findMethodExceptions(n, mn.name, mn.desc, mappings, explicitExceptions);
         if(exceptions != null && !exceptions.isEmpty()) {
           if(mn.exceptions != null) exceptions.stream().sorted().forEach(mn.exceptions::add);
           else {
