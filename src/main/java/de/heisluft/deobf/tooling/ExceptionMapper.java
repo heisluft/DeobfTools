@@ -387,7 +387,7 @@ public class ExceptionMapper implements Util {
         Optional<String> sdescOpt = findOverriddenMethod(superNode, methodName, args, returnType);
         if(sdescOpt.isPresent()) {
           String sdesc = sdescOpt.get();
-          overriddenMethods.computeIfAbsent(methodID, sk -> new HashSet<>()).add(new MethodID(cn.superName, methodDesc, sdesc));
+          overriddenMethods.computeIfAbsent(methodID, sk -> new HashSet<>()).add(new MethodID(cn.superName, methodName, sdesc));
           computeHierarchy(superNode, methodName, sdesc);
         }
       }
@@ -397,7 +397,7 @@ public class ExceptionMapper implements Util {
         Optional<String> sdescOpt = findOverriddenMethod(iface, methodName, args, returnType);
         if(sdescOpt.isPresent()) {
           String sdesc = sdescOpt.get();
-          overriddenMethods.computeIfAbsent(methodID, sk -> new HashSet<>()).add(new MethodID(ifaceName, methodDesc, sdesc));
+          overriddenMethods.computeIfAbsent(methodID, sk -> new HashSet<>()).add(new MethodID(ifaceName, methodName, sdesc));
           computeHierarchy(iface, methodName, sdesc);
         }
       }
