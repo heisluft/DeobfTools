@@ -188,13 +188,16 @@ public class MappingsGenerator implements Util {
    * @param ignored
    *     a list of paths to be ignored. these paths will be loaded to gather inheritance info but
    *     will not have mappings emitted
+   * @param regenerateFieldDescriptors
+   *     whether to overwrite the supplementary mappings' field descriptors. Requires field names to
+   *     be unique.
    *
    * @return the generated mappings
    *
    * @throws IOException
    *     if the jar file could not be read correctly
    */
-  public Mappings generateMappings(Path input, List<String> ignored) throws IOException {
+  public Mappings generateMappings(Path input, List<String> ignored, boolean regenerateFieldDescriptors) throws IOException {
     if(!Files.isRegularFile(input)) throw new FileNotFoundException(input.toString());
     if(!Files.isReadable(input)) throw new IOException("Cannot read from " + input);
     classNodes.putAll(parseClasses(input));
@@ -241,7 +244,10 @@ public class MappingsGenerator implements Util {
       gatherInheritedMethods(cn.superName);
       cn.interfaces.forEach(this::gatherInheritedMethods);
       cn.fields.forEach(fn -> {
-        if(builder.hasFieldMapping(cn.name, fn.name, fn.desc)) return;
+        if(builder.hasFieldMapping(cn.name, fn.name, fn.desc)) {
+          if(!regenerateFieldDescriptors) return;
+          builder.addFieldMapping(cn.name, fn.name, fn.desc, builder.getFieldName(cn.name, fn.name, fn.desc));
+        }
         // Automatically emit enum $VALUES mapping
         if(cn.superName.equals(Type.getInternalName(Enum.class)) && fn.desc.equals("[L" + cn.name + ";") && hasAll(fn.access, Opcodes.ACC_STATIC, Opcodes.ACC_SYNTHETIC, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE)) {
           builder.addFieldMapping(cn.name, fn.name, fn.desc, "$VALUES");

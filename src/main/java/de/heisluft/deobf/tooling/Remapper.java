@@ -24,9 +24,7 @@ import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -55,8 +53,16 @@ public class Remapper implements Util {
         }).build();
     AtomicReference<Path> jdkPath = new AtomicReference<>();
     AtomicReference<Mappings> supplementaryMappings = new AtomicReference<>();
-    AtomicBoolean stripBridgeAccess = new AtomicBoolean(true);
-    AtomicBoolean explicitExceptions = new AtomicBoolean(false);
+    OptionDefinition<Void> noBridgeStrip = flag("noBridgeStrip")
+        .shorthand('b')
+        .description("Valid only for 'remap'. Skips stripping of bridge and synthetic access modifiers for bridge methods.")
+        .build();
+    OptionDefinition<Void> explicitExceptions = flag("explicitExceptions")
+        .description("Valid only for 'remap'. If set, exceptions for a method don't automatically propagate downwards. Requires explicitly added exceptions within mappings.")
+        .build();
+    OptionDefinition<Void> regenerateFieldDescriptors = flag("regenerateFieldDescriptors")
+        .description("Valid only for 'map'. If set and supplementaryMappings are supplied, it will regenerate field mappings with the current jars field descriptors. Useful for converting frg to frg2 mappings.")
+        .build();
     OptionParser parser = new OptionParser(
         new Command("map", "Generates obfuscation mappings from the <input> jar and writes them to <mappings>."),
         new Command("remap", "Remaps the <input> jar with the specified <mappings> file and writes it to <output>."),
@@ -71,18 +77,7 @@ public class Remapper implements Util {
         .build()
     );
     parser.addRequiredArgs(eachOf("remap", "genConversionMappings", "genMediatorMappings"), outPath);
-    parser.addOptions(eachOf("remap"),
-        flag("noBridgeStrip")
-            .shorthand('b')
-            .description("Valid only for 'remap'. Skips stripping of bridge and synthetic access modifiers for bridge methods.")
-            .whenSet(() -> stripBridgeAccess.set(false))
-            .build(),
-        flag("explicitExceptions")
-            .shorthand('e')
-            .description("Valid only for 'remap'. If set, exceptions for a method don't automatically propagate downwards. Requires explicitly added exceptions within mappings.")
-            .whenSet(() -> explicitExceptions.set(true))
-            .build()
-    );
+    parser.addOptions(eachOf("remap"), noBridgeStrip, explicitExceptions);
     parser.addOptions(eachOf("map"),
         valued("supplementary", Path.class)
             .description("Valid only for 'map'. Provides supplementary mappings. For these, no new mappings will be generated, instead they will directly be merged into the output mappings file. ", "mappingsPath")
@@ -95,6 +90,7 @@ public class Remapper implements Util {
               }
             })
             .build(),
+        regenerateFieldDescriptors,
         valued("jdk", Path.class)
             .description("Valid only for 'map'. Path to JDK, used for inferring exceptions", "jdkPath")
             .callback(p -> {
@@ -148,13 +144,13 @@ public class Remapper implements Util {
             System.out.println("The output path must not match the input path.");
             return;
           }
-          new Remapper().remapJar(inputPath, mHandler.parseMappings(mappingsPath), result.getValue(outPath), ignoredPaths, stripBridgeAccess.get(), explicitExceptions.get());
+          new Remapper().remapJar(inputPath, mHandler.parseMappings(mappingsPath), result.getValue(outPath), ignoredPaths, !result.isSet(noBridgeStrip), result.isSet(explicitExceptions));
           break;
         case "genReverseMappings":
           mHandler.writeMappings(mHandler.parseMappings(inputPath).generateReverseMappings(), mappingsPath);
           break;
         default:
-          mHandler.writeMappings(new MappingsGenerator(supplementaryMappings.get(), jdkPath.get() == null ? new JDKClassProvider() : new JDKClassProvider(jdkPath.get())).generateMappings(inputPath, ignoredPaths), mappingsPath);
+          mHandler.writeMappings(new MappingsGenerator(supplementaryMappings.get(), jdkPath.get() == null ? new JDKClassProvider() : new JDKClassProvider(jdkPath.get())).generateMappings(inputPath, ignoredPaths, result.isSet(regenerateFieldDescriptors)), mappingsPath);
           break;
       }
     } catch(IOException e) {
