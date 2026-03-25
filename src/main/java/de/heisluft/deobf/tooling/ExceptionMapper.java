@@ -19,6 +19,7 @@ public class ExceptionMapper implements Util {
   private static final Map<String, ClassNode> classNodes = new HashMap<>();
   private static final List<String> exClasses = new ArrayList<>();
   private static final List<String> runtimeExesAndErrors = new ArrayList<>();
+  private static final Map<MethodID, Set<MethodID>> overriddenMethods = new HashMap<>();
 
   private final JDKClassProvider provider;
 
@@ -26,7 +27,7 @@ public class ExceptionMapper implements Util {
     this.provider = provider;
   }
 
-  public Map<String, List<String>> analyzeExceptions(Path inJar) throws IOException {
+  public Map<MethodID, List<String>> analyzeExceptions(Path inJar) throws IOException {
     classNodes.putAll(parseClasses(inJar));
     classNodes.values().stream().filter(this::isExceptionClass).map(cn -> cn.name).forEach(exClasses::add);
     classNodes.values().stream().filter(this::isRuntimeOrErrorClass).map(cn -> cn.name).forEach(runtimeExesAndErrors::add);
@@ -68,6 +69,7 @@ public class ExceptionMapper implements Util {
 
     private final String className;
     private MethodNode node;
+    private MethodID methodID;
 
     private final Stack<String> stack = new Stack<>();
     private final Map<Integer, String> locals = new HashMap<>(); // I wish this could just be an array, however, visitMaxs is called last...
@@ -82,14 +84,10 @@ public class ExceptionMapper implements Util {
 
     private final JDKClassProvider provider;
 
-    //mn -> Set<clsName + mdName + mdDesc>
-    private static final Map<MethodNode, Set<String>> calledMethods = new HashMap<>();
-    //clsName + . + mdName + mdDesc -> List<clsName>
-    private static final Map<String, List<String>> addedExceptions = new HashMap<>();
-    //clsName + mdName + mdDesc
-    private static Set<String> lastDirty = new HashSet<>();
-    //clsName + mdName + mdDesc
-    private static Set<String> currentDirty = new HashSet<>();
+    private static final Map<MethodNode, Set<MethodID>> calledMethods = new HashMap<>();
+    private static final Map<MethodID, List<String>> addedExceptions = new HashMap<>();
+    private static Set<MethodID> lastDirty = new HashSet<>();
+    private static Set<MethodID> currentDirty = new HashSet<>();
     private static boolean firstPass = true;
 
     public ExInferringMV(String className, JDKClassProvider provider) {
@@ -99,9 +97,11 @@ public class ExceptionMapper implements Util {
     }
 
     public void accept(MethodNode node) {
-      if(addedExceptions.containsKey(className + "." + node.name + node.desc)) return;
-      if(!firstPass && (!calledMethods.containsKey(node) || calledMethods.get(node).stream().noneMatch(lastDirty::contains))) return;
       this.node = node;
+      this.methodID = new MethodID(className, node.name, node.desc);
+      if(addedExceptions.containsKey(methodID)) return;
+      if(firstPass && Util.hasNone(node.access, ACC_PRIVATE, ACC_STATIC)) computeHierarchy(classNodes.get(className), node.name, node.desc);
+      if(!firstPass && (!calledMethods.containsKey(node) || calledMethods.get(node).stream().noneMatch(lastDirty::contains))) return;
       Type[] argTypes = Type.getArgumentTypes(node.desc);
       boolean isInstance = (node.access & ACC_STATIC) == 0;
       if(isInstance) locals.put(0, "L" + className + ";");
@@ -330,14 +330,14 @@ public class ExceptionMapper implements Util {
     }
 
     public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
-      String key = owner + name + descriptor;
-      if(!(owner.equals(className) && name.equals(node.name) && descriptor.equals(node.desc))) calledMethods.computeIfAbsent(node, k -> new HashSet<>()).add(key);
+      MethodID id = new MethodID(owner, name, descriptor);
+      if(!(owner.equals(className) && name.equals(node.name) && descriptor.equals(node.desc))) calledMethods.computeIfAbsent(node, k -> new HashSet<>()).add(id);
       Type[] argTypes = Type.getArgumentTypes(descriptor);
       for(int i = 0; i < argTypes.length; i++) stack.pop();
       if(opcode != INVOKESTATIC) stack.pop();
       if(!descriptor.endsWith(")V")) stack.push(descriptor.substring(descriptor.lastIndexOf(')') + 1));
-      if(addedExceptions.containsKey(owner + "." + name + descriptor)) {
-        addedExceptions.get(owner + "." + name + descriptor).stream().filter(ex -> isSignificant(desc(ex), caughtExceptions)).forEach(thrownExTypes::add);
+      if(addedExceptions.containsKey(id)) {
+        addedExceptions.get(id).stream().filter(ex -> isSignificant(desc(ex), caughtExceptions)).forEach(thrownExTypes::add);
       } else {
         ClassNode cn = provider.getClassNode(owner);
         if(cn != null) {
@@ -363,10 +363,72 @@ public class ExceptionMapper implements Util {
       }
       thrownExTypes.clear();
       if(!effExTypes.isEmpty()) {
-        addedExceptions.put(className + "." + node.name + node.desc, effExTypes);
-        currentDirty.add(className + node.name + node.desc);
+        for(MethodID overridden : overriddenMethods.getOrDefault(methodID, Set.of())) {
+          List<String> exTypes = addedExceptions.computeIfAbsent(overridden, k -> new ArrayList<>());
+          List<String> addedExTypes = new ArrayList<>();
+          for(String exType : effExTypes) if(isSignificant(desc(exType), exTypes)) addedExTypes.add(exType);
+          if(!addedExTypes.isEmpty()) {
+            exTypes.addAll(addedExTypes);
+            currentDirty.add(overridden);
+          }
+        }
+        addedExceptions.put(methodID, effExTypes);
+        currentDirty.add(methodID);
       }
       super.visitEnd();
+    }
+
+    private void computeHierarchy(ClassNode cn, String methodName, String methodDesc) {
+      int idx = methodDesc.lastIndexOf(')');
+      String returnType = methodDesc.substring(idx + 1);
+      String args = methodDesc.substring(0, idx + 1);
+      if(classNodes.containsKey(cn.superName)) {
+        ClassNode superNode = classNodes.get(cn.superName);
+        Optional<String> sdescOpt = findOverriddenMethod(superNode, methodName, args, returnType);
+        if(sdescOpt.isPresent()) {
+          String sdesc = sdescOpt.get();
+          overriddenMethods.computeIfAbsent(methodID, sk -> new HashSet<>()).add(new MethodID(cn.superName, methodDesc, sdesc));
+          computeHierarchy(superNode, methodName, sdesc);
+        }
+      }
+      for(String ifaceName : cn.interfaces) {
+        if(!classNodes.containsKey(ifaceName)) continue;
+        ClassNode iface = classNodes.get(ifaceName);
+        Optional<String> sdescOpt = findOverriddenMethod(iface, methodName, args, returnType);
+        if(sdescOpt.isPresent()) {
+          String sdesc = sdescOpt.get();
+          overriddenMethods.computeIfAbsent(methodID, sk -> new HashSet<>()).add(new MethodID(ifaceName, methodDesc, sdesc));
+          computeHierarchy(iface, methodName, sdesc);
+        }
+      }
+    }
+
+    private Optional<String> findOverriddenMethod(ClassNode cn, String methodName, String args, String returnType) {
+      return cn.methods.stream().filter(mn ->
+          Util.hasNone(mn.access, ACC_STATIC, ACC_PRIVATE)
+              && mn.name.equals(methodName)
+              && mn.desc.startsWith(args)
+              && isCompatible(returnType, mn.desc.substring(mn.desc.lastIndexOf(')') + 1))
+      ).map(mn -> mn.desc).findFirst();
+    }
+
+    private boolean isCompatible(String desc, String other) {
+      if(other.equals(desc)) return true;
+      // Primitives and Arrays cannot be specialized
+      if(desc.length() == 1 || desc.charAt(0) == '[') return false;
+      return isCompatibleRec(desc.substring(1, desc.length() - 1), other.substring(1, other.length() - 1));
+    }
+
+    private boolean isCompatibleRec(String type, String other) {
+      if(other.equals(type)) return true;
+      ClassNode cn = classNodes.getOrDefault(type, provider.getClassNode(type));
+      if(cn == null) return false;
+      if(other.equals(cn.superName) || cn.interfaces.contains(other)) return true;
+      if(isCompatibleRec(cn.superName, other)) return true;
+      for(String iface : cn.interfaces) {
+        if(isCompatibleRec(iface, other)) return true;
+      }
+      return false;
     }
 
     public void visitJumpInsn(int opcode, Label label) {

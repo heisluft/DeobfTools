@@ -231,9 +231,8 @@ public class MappingsGenerator implements Util {
     });
 
     new ExceptionMapper(provider).analyzeExceptions(input).forEach((s, exceptions) -> {
-      if(ignored.stream().anyMatch(s::startsWith)) return;
-      int dot = s.indexOf('.'), lPar = s.indexOf('(');
-      builder.addExceptions(s.substring(0, dot), s.substring(dot + 1, lPar), s.substring(lPar), exceptions);
+      if(ignored.stream().anyMatch(s.className()::startsWith)) return;
+      builder.addExceptions(s.className(), s.methodName(), s.methodDesc(), exceptions);
     });
 
     AtomicInteger fieldCounter = new AtomicInteger(1);
