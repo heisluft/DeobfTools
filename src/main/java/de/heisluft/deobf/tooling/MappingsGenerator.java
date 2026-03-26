@@ -197,12 +197,13 @@ public class MappingsGenerator implements Util {
    * @throws IOException
    *     if the jar file could not be read correctly
    */
-  public Mappings generateMappings(Path input, List<String> ignored, boolean regenerateFieldDescriptors) throws IOException {
+  public Mappings generateMappings(Path input, List<String> ignored, boolean regenerateFieldDescriptors, boolean computeExceptionData, boolean noop) throws IOException {
     if(!Files.isRegularFile(input)) throw new FileNotFoundException(input.toString());
     if(!Files.isReadable(input)) throw new IOException("Cannot read from " + input);
     classNodes.putAll(parseClasses(input));
     Set<String> packages = classNodes.values().stream().filter(p -> p.name.contains("/")).map(p -> p.name.substring(0, p.name.lastIndexOf("/"))).collect(Collectors.toSet());
     classNodes.values().stream().map(n -> n.name).filter(cn -> ignored.stream().noneMatch(cn::startsWith)).filter(cn -> !builder.hasClassMapping(cn)).forEach(cn -> {
+      if(noop) return;
       String modifiedName = cn;
       // Reserved Words should be escaped automatically
       if(RESERVED_WORDS.contains(modifiedName)) {
@@ -233,7 +234,7 @@ public class MappingsGenerator implements Util {
         builder.addClassMapping(cn, modifiedName);
     });
 
-    new ExceptionMapper(provider).analyzeExceptions(input).forEach((s, exceptions) -> {
+    if(computeExceptionData) new ExceptionMapper(provider).analyzeExceptions(input).forEach((s, exceptions) -> {
       if(ignored.stream().anyMatch(s.className()::startsWith)) return;
       builder.addExceptions(s.className(), s.methodName(), s.methodDesc(), exceptions);
     });
@@ -245,9 +246,10 @@ public class MappingsGenerator implements Util {
       cn.interfaces.forEach(this::gatherInheritedMethods);
       cn.fields.forEach(fn -> {
         if(builder.hasFieldMapping(cn.name, fn.name, fn.desc)) {
-          if(!regenerateFieldDescriptors) return;
-          builder.addFieldMapping(cn.name, fn.name, fn.desc, builder.getFieldName(cn.name, fn.name, fn.desc));
+          if(regenerateFieldDescriptors) builder.addFieldMapping(cn.name, fn.name, fn.desc, builder.getFieldName(cn.name, fn.name, fn.desc));
+          return;
         }
+        if(noop) return;
         // Automatically emit enum $VALUES mapping
         if(cn.superName.equals(Type.getInternalName(Enum.class)) && fn.desc.equals("[L" + cn.name + ";") && hasAll(fn.access, Opcodes.ACC_STATIC, Opcodes.ACC_SYNTHETIC, Opcodes.ACC_FINAL, Opcodes.ACC_PRIVATE)) {
           builder.addFieldMapping(cn.name, fn.name, fn.desc, "$VALUES");
@@ -260,6 +262,7 @@ public class MappingsGenerator implements Util {
       Set<String> ifaceMDs = cn.interfaces.stream().filter(inheritableMethods::containsKey).map(inheritableMethods::get).flatMap(Collection::stream).collect(Collectors.toSet());
       cn.methods.forEach(mn -> {
         if(builder.hasMethodMapping(cn.name, mn.name, mn.desc)) return;
+        if(noop) return;
         if((mn.access & Opcodes.ACC_STATIC) == Opcodes.ACC_STATIC) {
           //exclude public static void main(String[] args);
           if("main".equals(mn.name) && "([Ljava/lang/String;)V".equals(mn.desc) && (mn.access & Opcodes.ACC_PUBLIC) == Opcodes.ACC_PUBLIC && !builder.hasExceptionsFor(cn.name, "main", "(Ljava/lang/String;)V")) return;
