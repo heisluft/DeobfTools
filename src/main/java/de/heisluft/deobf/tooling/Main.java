@@ -36,9 +36,10 @@ public class Main {
     List<String> ignoredPaths = new ArrayList<>();
     AtomicReference<Mappings> supplementaryMappings = new AtomicReference<>();
     ArgDefinition<Path> outPath = ArgDefinition.arg("outputPath", Path.class).validatedBy(p -> Files.exists(p) && !Files.isWritable(p) ? invalid("output path is not writable") : valid()).build();
-    OptionDefinition<Path> jdkPath = valued("jdk", Path.class)
+    OptionDefinition<JDKClassProvider> jdkPath = valued("jdk", Path.class)
         .description("Valid only for 'map' and 'writeFRG2'. Path to JDK, used for inferring exceptions", "jdkPath")
         .validatedBy(p -> !Files.isDirectory(p) ? invalid("jdk path does not point to a directory") : valid())
+        .mapValue(JDKClassProvider::new)
         .build();
     OptionDefinition<Void> noBridgeStrip = flag("noBridgeStrip")
         .shorthand('b')
@@ -84,7 +85,8 @@ public class Main {
             })
             .build(),
         regenerateFieldDescriptors,
-        recomputeExceptionData
+        recomputeExceptionData,
+        jdkPath
     );
 
     parser.addOptions(ROOT_COMMAND, flag("help")
@@ -142,13 +144,13 @@ public class Main {
           oHandler = MappingsHandlers.findFileHandler(result.getArg(outPath).toString());
           oHandler.writeMappings(new MappingsGenerator(
               mHandler.parseMappings(mappingsPath),
-              result.isSet(jdkPath) ? new JDKClassProvider(result.getOption(jdkPath)) : new JDKClassProvider()
+              result.getOption(jdkPath, JDKClassProvider::new)
           ).generateMappings(inputPath, ignoredPaths, result.isSet(regenerateFieldDescriptors), result.isSet(recomputeExceptionData), true), result.getArg(outPath));
           break;
         default:
           mHandler.writeMappings(new MappingsGenerator(
               supplementaryMappings.get(),
-              result.isSet(jdkPath) ? new JDKClassProvider(result.getOption(jdkPath)) : new JDKClassProvider()
+              result.getOption(jdkPath, JDKClassProvider::new)
           ).generateMappings(inputPath, ignoredPaths, result.isSet(regenerateFieldDescriptors), result.isSet(recomputeExceptionData), false), mappingsPath);
           break;
       }

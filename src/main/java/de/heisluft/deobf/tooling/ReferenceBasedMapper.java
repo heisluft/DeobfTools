@@ -516,7 +516,7 @@ public class ReferenceBasedMapper implements Util {
       return;
     }
     ReferenceBasedMapper bc = new ReferenceBasedMapper(
-        result.getOption(cpOpt, new JDKClassProvider()),
+        result.getOption(cpOpt, JDKClassProvider::new),
         result.getArg(jarArg),
         result.getArg(refJarArg),
         ignorePaths
