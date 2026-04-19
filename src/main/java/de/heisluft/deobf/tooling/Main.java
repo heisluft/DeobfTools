@@ -1,4 +1,4 @@
-package de.heisluft.deobf;
+package de.heisluft.deobf.tooling;
 
 import de.heisluft.cli.simplecli.ArgDefinition;
 import de.heisluft.cli.simplecli.Command;
@@ -8,9 +8,6 @@ import de.heisluft.cli.simplecli.OptionParser;
 import de.heisluft.deobf.mappings.Mappings;
 import de.heisluft.deobf.mappings.MappingsHandler;
 import de.heisluft.deobf.mappings.MappingsHandlers;
-import de.heisluft.deobf.tooling.JDKClassProvider;
-import de.heisluft.deobf.tooling.MappingsGenerator;
-import de.heisluft.deobf.tooling.Remapper;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -72,9 +69,8 @@ public class Main {
         .callback(s -> ignoredPaths.addAll(Arrays.asList(s.split(";"))))
         .build()
     );
-    parser.addRequiredArgs(eachOf("remap", "genConversionMappings", "genMediatorMappings", "writeFRG2"), outPath);
     parser.addOptions(eachOf("remap"), noBridgeStrip, explicitExceptions);
-    parser.addOptions(eachOf("writeFRG2"), regenerateFieldDescriptors, recomputeExceptionData);
+    parser.addOptions(eachOf("writeFRG2"), regenerateFieldDescriptors, recomputeExceptionData, jdkPath);
     parser.addOptions(eachOf("map"),
         valued("supplementary", Path.class)
             .description("Valid only for 'map'. Provides supplementary mappings. For these, no new mappings will be generated, instead they will directly be merged into the output mappings file. ", "mappingsPath")
@@ -102,6 +98,7 @@ public class Main {
         .build();
     var mappingsArg = ArgDefinition.arg("mappingsPath", Path.class).build();
     parser.addRequiredArgs(Predicate.not(ROOT_COMMAND), inArg, mappingsArg);
+    parser.addRequiredArgs(eachOf("remap", "genConversionMappings", "genMediatorMappings", "writeFRG2"), outPath);
     OptionParseResult result = parser.parse(args);
     if(result.subcommand == null)  {
       displayHelpAndExit(parser);
@@ -142,10 +139,12 @@ public class Main {
           mHandler.writeMappings(mHandler.parseMappings(inputPath).generateReverseMappings(), mappingsPath);
           break;
         case "writeFRG2":
-          mHandler.writeMappings(new MappingsGenerator(
+          oHandler = MappingsHandlers.findFileHandler(result.getArg(outPath).toString());
+          oHandler.writeMappings(new MappingsGenerator(
               mHandler.parseMappings(mappingsPath),
               result.isSet(jdkPath) ? new JDKClassProvider(result.getOption(jdkPath)) : new JDKClassProvider()
-          ).generateMappings(inputPath, ignoredPaths, result.isSet(regenerateFieldDescriptors), result.isSet(recomputeExceptionData), true), mappingsPath);
+          ).generateMappings(inputPath, ignoredPaths, result.isSet(regenerateFieldDescriptors), result.isSet(recomputeExceptionData), true), result.getArg(outPath));
+          break;
         default:
           mHandler.writeMappings(new MappingsGenerator(
               supplementaryMappings.get(),

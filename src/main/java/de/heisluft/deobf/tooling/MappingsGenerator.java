@@ -234,10 +234,13 @@ public class MappingsGenerator implements Util {
         builder.addClassMapping(cn, modifiedName);
     });
 
-    if(computeExceptionData) new ExceptionMapper(provider).analyzeExceptions(input).forEach((s, exceptions) -> {
-      if(ignored.stream().anyMatch(s.className()::startsWith)) return;
-      builder.addExceptions(s.className(), s.methodName(), s.methodDesc(), exceptions);
-    });
+    if(computeExceptionData) {
+      builder.clearExceptionsAndParameters();
+      new ExceptionMapper(provider).analyzeExceptions(input).forEach((s, exceptions) -> {
+        if(ignored.stream().anyMatch(s.className()::startsWith)) return;
+        builder.addExceptions(s.className(), s.methodName(), s.methodDesc(), exceptions);
+      });
+    }
 
     AtomicInteger fieldCounter = new AtomicInteger(1);
     AtomicInteger methodCounter = new AtomicInteger(1);
