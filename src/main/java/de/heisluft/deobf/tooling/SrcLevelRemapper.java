@@ -1,5 +1,9 @@
 package de.heisluft.deobf.tooling;
 
+import de.heisluft.deobf.mappings.Mappings;
+import de.heisluft.deobf.mappings.MappingsHandlers;
+import de.heisluft.deobf.tooling.binfix.MappingsProvider;
+
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -41,7 +45,7 @@ public class SrcLevelRemapper implements Util {
   }
 
   /**
-   * Generates all String replacements from frg2src mappings. This method does not validate mappings
+   * Generates all String replacements from unique mappings. This method does not validate mappings
    * in any way
    *
    * @param mappingsPath
@@ -51,11 +55,12 @@ public class SrcLevelRemapper implements Util {
    *     if the mappings file could not be read
    */
   private SrcLevelRemapper(Path mappingsPath) throws IOException {
-    List<String> lines = Files.readAllLines(mappingsPath);
-    lines.forEach(line -> {
-      String[] words = line.split(" ");
-      if("MD:".equals(words[0])) replacements.put(words[2], words[4]);
-      if("FD:".equals(words[0])) replacements.put(words[2], words[3]);
+    var mappings = MappingsHandlers.findFileHandler(mappingsPath.toString()).parseMappings(mappingsPath);
+    mappings.forAllFields((cName, memberName, memberDesc, data) -> {
+      replacements.put(memberName, data);
+    });
+    mappings.forAllMethods((cName, methodName, methodDesc, data) -> {
+      replacements.put(methodName, data);
     });
   }
 

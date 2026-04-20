@@ -67,23 +67,23 @@ public class Main {
     );
     parser.addOptions(eachOf("map", "remap", "writeFRG2"), valued("ignorepaths")
         .description("A List of paths to ignore from the input jar. Multiple Paths are separated using ; (semicolon). These Paths are treated as wildcards. For example, -i com;org/unwanted/ would lead the program to exclude all paths starting with either 'com' or 'org/unwanted/' eg. 'com/i.class', 'computer.xml', 'org/unwanted/b.gif'. This option will be ignored for tasks only operating on mappings", "pathsToIgnore")
-        .callback(s -> ignoredPaths.addAll(Arrays.asList(s.split(";"))))
-        .build()
+        .mapValue(s -> s.split(";"))
+        .mapValue(Arrays::asList)
+        .build(ignoredPaths::addAll)
     );
     parser.addOptions(eachOf("remap"), noBridgeStrip, explicitExceptions);
     parser.addOptions(eachOf("writeFRG2"), regenerateFieldDescriptors, recomputeExceptionData, jdkPath);
     parser.addOptions(eachOf("map"),
         valued("supplementary", Path.class)
             .description("Valid only for 'map'. Provides supplementary mappings. For these, no new mappings will be generated, instead they will directly be merged into the output mappings file. ", "mappingsPath")
-            .callback(p -> {
-              if(!Files.isReadable(p)) throw new IllegalArgumentException("mappings path does not exist or is not readable");
+            .validatedBy(p -> Files.isReadable(p) ? valid() : invalid("mappings path does not exist or is not readable"))
+            .build(p -> {
               try {
                 supplementaryMappings.set(MappingsHandlers.parseMappings(p));
               } catch(IOException exception) {
                 throw new IllegalArgumentException("Error reading mappings at " + p, exception);
               }
-            })
-            .build(),
+            }),
         regenerateFieldDescriptors,
         recomputeExceptionData,
         jdkPath

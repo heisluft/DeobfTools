@@ -503,9 +503,9 @@ public class ReferenceBasedMapper implements Util {
         .mapValue(JDKClassProvider::new)
         .build();
     var ignoreOption = OptionDefinition.valued("ignore-paths")
-        .mapValue(s -> Arrays.asList(s.split(";")))
-        .callback(ignorePaths::addAll)
-        .build();
+        .mapValue(s -> s.split(";"))
+        .mapValue(Arrays::asList)
+        .build(ignorePaths::addAll);
     parser.getCommands().forEach(cmd -> {
       cmd.addOptions(cpOpt,  ignoreOption);
       cmd.addRequiredArgs(jarArg, refJarArg);
